@@ -366,25 +366,6 @@ async function handleGoogleSignIn(e) {
 }
 
 function setupEventListeners() {
-  const usernamePlaceholderOverlay = document.getElementById('usernamePlaceholderOverlay');
-  const updateUsernameOverlay = () => {
-    if (!usernamePlaceholderOverlay) return;
-    if (usernameInput.value && usernameInput.value.length > 0) {
-      usernamePlaceholderOverlay.style.display = 'none';
-    } else {
-      usernamePlaceholderOverlay.style.display = 'flex';
-    }
-  };
-  usernameInput?.addEventListener('input', updateUsernameOverlay);
-  usernameInput?.addEventListener('focus', () => {
-    if (usernamePlaceholderOverlay) usernamePlaceholderOverlay.style.opacity = '0.3';
-  });
-  usernameInput?.addEventListener('blur', () => {
-    if (usernamePlaceholderOverlay) usernamePlaceholderOverlay.style.opacity = '1';
-    updateUsernameOverlay();
-  });
-  updateUsernameOverlay();
-
   usernameForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const val = usernameInput.value.trim();
