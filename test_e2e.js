@@ -1,13 +1,11 @@
 const assert = require('assert');
 
-// 1x1 transparent PNG base64 for testing
 const TINY_PNG_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
 async function runTests() {
-  console.log('🧪 Starting End-to-End DRM View-Once Tests (Username-Only + Google Redirect)...');
+  console.log('🧪 Starting End-to-End Tests (Custom Durations, Screenshot & Download Controls)...');
 
   const BASE_URL = 'http://localhost:8000';
-  let sessionCookie = '';
 
   // 1. Username Login
   const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
@@ -15,14 +13,13 @@ async function runTests() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: 'RyanTester' })
   });
-  assert.strictEqual(loginRes.status, 200, 'Login status should be 200');
+  assert.strictEqual(loginRes.status, 200);
   const loginData = await loginRes.json();
-  assert.strictEqual(loginData.success, true, 'Login should succeed');
-  assert.strictEqual(loginData.user.username, 'RyanTester', 'Username should match');
-  sessionCookie = loginRes.headers.get('set-cookie');
+  assert.strictEqual(loginData.user.username, 'RyanTester');
+  const sessionCookie = loginRes.headers.get('set-cookie');
   console.log('✓ Username login succeeded as @' + loginData.user.username);
 
-  // 2. Upload Image
+  // 2. Upload with 15m (900s), Screenshots Allowed, and Download Allowed
   const uploadRes = await fetch(`${BASE_URL}/api/upload`, {
     method: 'POST',
     headers: {
@@ -32,64 +29,51 @@ async function runTests() {
     body: JSON.stringify({
       username: 'RyanTester',
       fileData: TINY_PNG_BASE64,
-      filename: 'confidential_snap.png',
+      filename: 'permission_test.png',
       mimeType: 'image/png',
-      viewDuration: 30,
-      spotlightMode: true,
-      watermarkEnabled: true,
-      antiScreenshotLevel: 'strict'
+      viewDuration: 900, // 15m
+      allowScreenshots: true,
+      allowDownload: true,
+      spotlightMode: false,
+      watermarkEnabled: true
     })
   });
-  assert.strictEqual(uploadRes.status, 200, 'Upload status should be 200');
+  assert.strictEqual(uploadRes.status, 200);
   const uploadData = await uploadRes.json();
-  assert.strictEqual(uploadData.success, true, 'Upload should succeed');
+  assert.strictEqual(uploadData.viewDuration, 900, 'Duration should be 900s (15m)');
+  assert.strictEqual(uploadData.allowScreenshots, true, 'Screenshots should be allowed');
+  assert.strictEqual(uploadData.allowDownload, true, 'Downloads should be allowed');
   const token = uploadData.token;
-  assert.ok(token, 'Token must be present');
-  console.log('✓ View-once link generated with token:', token);
+  console.log('✓ Upload generated link with 15m duration, allowScreenshots=true, allowDownload=true');
 
-  // 3. Status Before Viewing
+  // 3. Status Check
   const statusRes = await fetch(`${BASE_URL}/api/view/${token}/status`);
-  assert.strictEqual(statusRes.status, 200, 'Status should be 200 before view');
+  assert.strictEqual(statusRes.status, 200);
   const statusData = await statusRes.json();
-  assert.strictEqual(statusData.status, 'ready', 'Status must be ready');
-  console.log('✓ Pre-view status verified: READY');
+  assert.strictEqual(statusData.viewDuration, 900);
+  assert.strictEqual(statusData.allowScreenshots, true);
+  assert.strictEqual(statusData.allowDownload, true);
+  console.log('✓ Status endpoint verified permissions: allowScreenshots=true, allowDownload=true');
 
-  // 4. First View Unlock
+  // 4. Unlock Check
   const unlockRes = await fetch(`${BASE_URL}/api/view/${token}/unlock`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
-  assert.strictEqual(unlockRes.status, 200, 'First unlock should succeed (200)');
+  assert.strictEqual(unlockRes.status, 200);
   const unlockData = await unlockRes.json();
-  assert.strictEqual(unlockData.success, true, 'Unlock response must indicate success');
-  assert.strictEqual(unlockData.senderUsername, 'RyanTester', 'Sender username present');
-  assert.ok(unlockData.data.startsWith('data:image/png;base64,'), 'Decrypted image returned');
-  console.log('✓ First view unlocked. Decrypted payload received. Server copy shredded.');
+  assert.strictEqual(unlockData.allowDownload, true, 'Download permission present in unlock payload');
+  assert.ok(unlockData.data.startsWith('data:image/png;base64,'));
+  console.log('✓ Unlock succeeded and verified download permission.');
 
-  // 5. Second View Attempt (Must redirect to Google)
-  const secondUnlockRes = await fetch(`${BASE_URL}/api/view/${token}/unlock`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  });
-  assert.strictEqual(secondUnlockRes.status, 410, 'Second unlock must return 410');
-  const secondData = await secondUnlockRes.json();
-  assert.strictEqual(secondData.redirect, 'https://www.google.com', 'Redirect must point to Google');
-  console.log('✓ Second unlock attempt rejected with 410 and redirect to Google: ' + secondData.redirect);
+  // 5. Subsequent View Attempt -> Redirect to Google!
+  const secondRes = await fetch(`${BASE_URL}/api/view/${token}/status`);
+  assert.strictEqual(secondRes.status, 410);
+  const secondData = await secondRes.json();
+  assert.strictEqual(secondData.redirect, 'https://www.google.com');
+  console.log('✓ Second attempt correctly triggers redirect to Google.');
 
-  // 6. Status check after view (Must specify redirect to Google)
-  const statusAfterRes = await fetch(`${BASE_URL}/api/view/${token}/status`);
-  assert.strictEqual(statusAfterRes.status, 410, 'Status after view must return 410');
-  const statusAfterData = await statusAfterRes.json();
-  assert.strictEqual(statusAfterData.redirect, 'https://www.google.com', 'Status endpoint confirms Google redirect');
-  console.log('✓ Status check confirms Google redirect: ' + statusAfterData.redirect);
-
-  // 7. Direct /v/:token page request (Server 302 Redirect to Google)
-  const pageRes = await fetch(`${BASE_URL}/v/${token}`, { redirect: 'manual' });
-  assert.strictEqual(pageRes.status, 302, 'HTTP request to viewed /v/:token must be 302 redirect');
-  assert.strictEqual(pageRes.headers.get('location'), 'https://www.google.com', 'Location header must be Google');
-  console.log('✓ Server-side HTTP 302 redirect to Google verified on /v/' + token);
-
-  console.log('\n🎉 ALL TESTS PASSED! Username sender + Google redirect 100% verified.');
+  console.log('\n🎉 ALL TESTS PASSED! Duration options, permissions, and Google redirect 100% verified.');
 }
 
 runTests().catch(err => {

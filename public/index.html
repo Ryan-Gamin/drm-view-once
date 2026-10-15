@@ -105,30 +105,53 @@
           </div>
 
           <!-- DRM Options Grid -->
-          <div style="margin-top: 1.75rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem;">
+          <div style="margin-top: 1.75rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
             
+            <!-- Exact Duration Options Requested -->
             <div class="form-group">
               <label class="form-label" for="durationSelect">Viewing Duration</label>
               <select id="durationSelect" class="form-select">
-                <option value="15">15 Seconds (Strict)</option>
-                <option value="30" selected>30 Seconds (Recommended)</option>
-                <option value="60">60 Seconds</option>
-                <option value="0">Unlimited (Burns when tab closes)</option>
+                <option value="0">∞ Infinity (Until tab/window is closed)</option>
+                <option value="3600">1h (1 Hour)</option>
+                <option value="2700">45m (45 Minutes)</option>
+                <option value="1800">30m (30 Minutes)</option>
+                <option value="900">15m (15 Minutes)</option>
+                <option value="600">10m (10 Minutes)</option>
+                <option value="300">5m (5 Minutes)</option>
+                <option value="180">3m (3 Minutes)</option>
+                <option value="60">60s (1 Minute)</option>
+                <option value="30" selected>30s (30 Seconds)</option>
+                <option value="15">15s (15 Seconds)</option>
+                <option value="10">10s (10 Seconds)</option>
+                <option value="5">5s (5 Seconds)</option>
               </select>
             </div>
 
+            <!-- Permission Controls -->
             <div class="form-group">
-              <label class="form-label" for="antiScreenshotSelect">Anti-Screenshot Shield</label>
-              <select id="antiScreenshotSelect" class="form-select">
-                <option value="strict" selected>Strict (Blackout on blur, blocks Snipping Tool)</option>
-                <option value="standard">Standard (Block print & context menu)</option>
-              </select>
+              <label class="form-label">Screenshot Protection</label>
+              <label class="switch-label" style="margin-bottom: 0;">
+                <div>
+                  <p style="font-weight: 600; font-size: 0.85rem;" id="screenshotPermText">Disallow Screenshots (Strict Shield)</p>
+                  <p style="font-size: 0.75rem; color: var(--text-muted);">Blacks out screen on blur, blocks Snipping tool & PrintScreen</p>
+                </div>
+                <input type="checkbox" id="allowScreenshotsToggle" class="switch-input">
+              </label>
             </div>
 
           </div>
 
-          <!-- Toggles -->
+          <!-- Additional Toggles -->
           <div style="margin-top: 0.5rem;">
+            
+            <label class="switch-label">
+              <div>
+                <p style="font-weight: 600; font-size: 0.9rem;" id="downloadPermText">Allow Native Download Button</p>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">If enabled, a native "Download Image" button is provided to the viewer</p>
+              </div>
+              <input type="checkbox" id="allowDownloadToggle" class="switch-input">
+            </label>
+
             <label class="switch-label">
               <div>
                 <p style="font-weight: 600; font-size: 0.9rem;">Dynamic Forensic Watermark</p>
@@ -173,13 +196,14 @@
                   <th>Created</th>
                   <th>Status</th>
                   <th>Duration</th>
-                  <th>Viewer IP</th>
+                  <th>Screenshots</th>
+                  <th>Download</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="linksTableBody">
                 <tr>
-                  <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No uploads yet.</td>
+                  <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">No uploads yet. Create your first view-once link above!</td>
                 </tr>
               </tbody>
             </table>

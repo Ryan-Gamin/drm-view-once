@@ -1,4 +1,4 @@
-// DRM View-Once Vault - Dashboard Client (Username-Only Flow)
+// DRM View-Once Vault - Dashboard Client (Username-Only Flow with Custom Permissions)
 let currentUsername = localStorage.getItem('drm_username') || '';
 let selectedFile = null;
 let selectedFileDataUri = null;
@@ -21,7 +21,9 @@ const previewSize = document.getElementById('previewSize');
 const removeFileBtn = document.getElementById('removeFileBtn');
 
 const durationSelect = document.getElementById('durationSelect');
-const antiScreenshotSelect = document.getElementById('antiScreenshotSelect');
+const allowScreenshotsToggle = document.getElementById('allowScreenshotsToggle');
+const screenshotPermText = document.getElementById('screenshotPermText');
+const allowDownloadToggle = document.getElementById('allowDownloadToggle');
 const watermarkToggle = document.getElementById('watermarkToggle');
 const spotlightToggle = document.getElementById('spotlightToggle');
 const uploadBtn = document.getElementById('uploadBtn');
@@ -78,7 +80,9 @@ function renderActiveUser() {
   usernamePromptSection.style.display = 'none';
   dashboardSection.style.display = 'block';
 
-  watermarkUsernamePreview.innerText = currentUsername;
+  if (watermarkUsernamePreview) {
+    watermarkUsernamePreview.innerText = currentUsername;
+  }
 
   const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentUsername)}`;
 
@@ -106,7 +110,6 @@ function renderActiveUser() {
 }
 
 function setupEventListeners() {
-  // Username submission
   usernameForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const val = usernameInput.value.trim();
@@ -115,7 +118,14 @@ function setupEventListeners() {
     }
   });
 
-  // Dropzone interactions
+  allowScreenshotsToggle?.addEventListener('change', () => {
+    if (screenshotPermText) {
+      screenshotPermText.innerText = allowScreenshotsToggle.checked
+        ? 'Allow Screenshots (Shield Disabled)'
+        : 'Disallow Screenshots (Strict Shield)';
+    }
+  });
+
   dropzone.addEventListener('click', () => fileInput.click());
   
   ['dragenter', 'dragover'].forEach(name => {
@@ -152,7 +162,6 @@ function setupEventListeners() {
   uploadBtn.addEventListener('click', handleUpload);
   refreshLinksBtn?.addEventListener('click', loadUserLinks);
 
-  // Modal actions
   closeModalBtn.addEventListener('click', () => shareModal.classList.remove('active'));
   shareModal.addEventListener('click', (e) => {
     if (e.target === shareModal) shareModal.classList.remove('active');
@@ -210,7 +219,7 @@ async function handleUpload() {
   uploadBtn.disabled = true;
   uploadBtn.innerHTML = `
     <svg style="animation: spin 1s linear infinite;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
-    <span>Encrypting & Arming DRM...</span>
+    <span>Encrypting & Generating Link...</span>
   `;
 
   try {
@@ -220,9 +229,10 @@ async function handleUpload() {
       filename: selectedFile.name,
       mimeType: selectedFile.type,
       viewDuration: parseInt(durationSelect.value, 10),
+      allowScreenshots: allowScreenshotsToggle.checked,
+      allowDownload: allowDownloadToggle.checked,
       spotlightMode: spotlightToggle.checked,
-      watermarkEnabled: watermarkToggle.checked,
-      antiScreenshotLevel: antiScreenshotSelect.value
+      watermarkEnabled: watermarkToggle.checked
     };
 
     const res = await fetch('/api/upload', {
@@ -271,6 +281,13 @@ function showShareModal(token) {
   shareModal.classList.add('active');
 }
 
+function formatDuration(sec) {
+  if (!sec || sec === 0) return '∞ (Infinity)';
+  if (sec >= 3600) return `${Math.floor(sec / 3600)}h`;
+  if (sec >= 60) return `${Math.floor(sec / 60)}m`;
+  return `${sec}s`;
+}
+
 async function loadUserLinks() {
   try {
     const res = await fetch('/api/images');
@@ -280,30 +297,33 @@ async function loadUserLinks() {
     if (images.length === 0) {
       linksTableBody.innerHTML = `
         <tr>
-          <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No uploads yet. Create your first view-once link above!</td>
+          <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">No uploads yet. Create your first view-once link above!</td>
         </tr>
       `;
       return;
     }
 
     linksTableBody.innerHTML = images.map(img => {
-      let badge = '<span class="badge badge-active">Active (Unopened)</span>';
+      let badge = '<span class="badge badge-active">Active</span>';
       if (img.isBurned || img.isViewed) {
         badge = '<span class="badge badge-burned">Burned → Redirects to Google</span>';
       }
 
       const createdDate = new Date(img.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-      const durationText = img.viewDuration > 0 ? `${img.viewDuration}s` : 'Tab Close';
+      const durationText = formatDuration(img.viewDuration);
+      const screenshotsAllowed = img.allowScreenshots ? '<span style="color: var(--accent-green);">Allowed</span>' : '<span style="color: var(--accent-red);">Blocked</span>';
+      const downloadAllowed = img.allowDownload ? '<span style="color: var(--accent-green);">Yes</span>' : '<span style="color: var(--text-muted);">No</span>';
 
       return `
         <tr>
-          <td style="font-weight: 600; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          <td style="font-weight: 600; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
             ${img.filename}
           </td>
           <td style="color: var(--text-muted); font-size: 0.8rem;">${createdDate}</td>
           <td>${badge}</td>
-          <td style="color: var(--text-muted); font-size: 0.85rem;">${durationText}</td>
-          <td style="font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">${img.viewerIp || '—'}</td>
+          <td style="color: var(--accent-cyan); font-weight: 600; font-size: 0.85rem;">${durationText}</td>
+          <td style="font-size: 0.85rem;">${screenshotsAllowed}</td>
+          <td style="font-size: 0.85rem;">${downloadAllowed}</td>
           <td>
             <button onclick="deleteLink('${img.token}')" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
               Revoke
@@ -318,7 +338,7 @@ async function loadUserLinks() {
 }
 
 window.deleteLink = async (token) => {
-  if (!confirm('Are you sure you want to revoke and shred this link immediately? Any future visitors will redirect to Google.')) return;
+  if (!confirm('Are you sure you want to revoke and shred this link immediately? Future visitors will be redirected to Google.')) return;
   try {
     await fetch(`/api/images/${token}`, { method: 'DELETE' });
     loadUserLinks();

@@ -45,22 +45,15 @@ exports.handler = async (event) => {
     if (!record) {
       return {
         statusCode: 404,
-        headers: {
-          ...corsHeaders,
-          'Location': 'https://www.google.com'
-        },
+        headers: { ...corsHeaders, 'Location': 'https://www.google.com' },
         body: JSON.stringify({ status: 'not_found', redirect: 'https://www.google.com' })
       };
     }
 
     if (record.isBurned || record.isViewed) {
-      // Already viewed once -> signal redirect to Google!
       return {
         statusCode: 410,
-        headers: {
-          ...corsHeaders,
-          'Location': 'https://www.google.com'
-        },
+        headers: { ...corsHeaders, 'Location': 'https://www.google.com' },
         body: JSON.stringify({
           status: 'burned',
           redirect: 'https://www.google.com',
@@ -73,10 +66,7 @@ exports.handler = async (event) => {
       await burnImageRecord(token, 'expired_before_view');
       return {
         statusCode: 410,
-        headers: {
-          ...corsHeaders,
-          'Location': 'https://www.google.com'
-        },
+        headers: { ...corsHeaders, 'Location': 'https://www.google.com' },
         body: JSON.stringify({
           status: 'expired',
           redirect: 'https://www.google.com'
@@ -93,9 +83,10 @@ exports.handler = async (event) => {
         filename: record.filename,
         filesize: record.filesize,
         viewDuration: record.viewDuration,
-        spotlightMode: record.spotlightMode,
-        watermarkEnabled: record.watermarkEnabled,
-        antiScreenshotLevel: record.antiScreenshotLevel
+        allowScreenshots: Boolean(record.allowScreenshots),
+        allowDownload: Boolean(record.allowDownload),
+        spotlightMode: Boolean(record.spotlightMode),
+        watermarkEnabled: Boolean(record.watermarkEnabled)
       })
     };
   }
@@ -147,7 +138,7 @@ exports.handler = async (event) => {
       };
     }
 
-    // ATOMIC SHRED: Purge encrypted data from storage immediately
+    // ATOMIC SHRED: Purge encrypted data from storage immediately upon unlock
     await burnImageRecord(token, 'view_unlocked_and_shredded');
 
     const b64 = decryptedBuffer.toString('base64');
@@ -162,12 +153,14 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         success: true,
         data: dataUri,
+        filename: record.filename,
         senderUsername: record.senderUsername || 'Confidential',
         mimeType: record.mimeType,
         viewDuration: record.viewDuration,
-        spotlightMode: record.spotlightMode,
-        watermarkEnabled: record.watermarkEnabled,
-        antiScreenshotLevel: record.antiScreenshotLevel,
+        allowScreenshots: Boolean(record.allowScreenshots),
+        allowDownload: Boolean(record.allowDownload),
+        spotlightMode: Boolean(record.spotlightMode),
+        watermarkEnabled: Boolean(record.watermarkEnabled),
         viewerIp,
         timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
       })

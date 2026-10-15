@@ -5,7 +5,7 @@ const { saveImageRecord } = require('./storage');
 const JWT_SECRET = process.env.JWT_SECRET || 'drm-vault-jwt-session-secret-key-9988';
 
 function parseUser(event) {
-  const cookieHeader = event.headers.cookie || event.headers.Cookie || '';
+  const cookieHeader = (event.headers && (event.headers.cookie || event.headers.Cookie)) || '';
   const cookies = {};
   cookieHeader.split(';').forEach(c => {
     const [k, ...v] = c.trim().split('=');
@@ -61,9 +61,10 @@ exports.handler = async (event) => {
       filename = 'image.png',
       mimeType = 'image/png',
       viewDuration = 30,
+      allowScreenshots = false,
+      allowDownload = false,
       spotlightMode = false,
-      watermarkEnabled = true,
-      antiScreenshotLevel = 'strict'
+      watermarkEnabled = true
     } = body;
 
     if (!fileData) {
@@ -92,10 +93,11 @@ exports.handler = async (event) => {
       filesize: buffer.length,
       createdAt: now.toISOString(),
       expiresAt,
-      viewDuration: parseInt(viewDuration, 10) || 30,
+      viewDuration: parseInt(viewDuration, 10) || 0,
+      allowScreenshots: Boolean(allowScreenshots),
+      allowDownload: Boolean(allowDownload),
       spotlightMode: Boolean(spotlightMode),
       watermarkEnabled: Boolean(watermarkEnabled),
-      antiScreenshotLevel,
       isViewed: false,
       viewedAt: null,
       viewerIp: null,
@@ -118,6 +120,8 @@ exports.handler = async (event) => {
         senderUsername: username,
         filename,
         viewDuration: record.viewDuration,
+        allowScreenshots: record.allowScreenshots,
+        allowDownload: record.allowDownload,
         spotlightMode: record.spotlightMode,
         watermarkEnabled: record.watermarkEnabled,
         createdAt: record.createdAt,

@@ -3,11 +3,9 @@
   const REDIRECT_TARGET = 'https://www.google.com';
 
   function redirectToGoogle() {
-    // Immediate redirect away if burned or viewed
     window.location.replace(REDIRECT_TARGET);
   }
 
-  // Extract token from URL
   function extractToken() {
     const urlParams = new URLSearchParams(window.location.search);
     const queryToken = urlParams.get('t');
@@ -30,9 +28,13 @@
   const screenshotShield = document.getElementById('screenshotShield');
   const unlockBtn = document.getElementById('unlockBtn');
   const burnEarlyBtn = document.getElementById('burnEarlyBtn');
+  const nativeDownloadBtn = document.getElementById('nativeDownloadBtn');
   const timerDisplay = document.getElementById('timerDisplay');
+  const timerSubtitle = document.getElementById('timerSubtitle');
   const spotlightHint = document.getElementById('spotlightHint');
   const sessionDurationInfo = document.getElementById('sessionDurationInfo');
+  const screenshotStatusInfo = document.getElementById('screenshotStatusInfo');
+  const senderUsernameDisplay = document.getElementById('senderUsernameDisplay');
   const headerStatusText = document.getElementById('headerStatusText');
   const headerDot = document.getElementById('headerDot');
   const canvas = document.getElementById('drmCanvas');
@@ -46,6 +48,8 @@
   let animationFrameId = null;
   let isWindowFocused = true;
   let isSpotlightActive = false;
+  let screenshotsAllowed = false;
+  let downloadAllowed = false;
   let mousePos = { x: -9999, y: -9999 };
   let isMouseDown = false;
   let watermarkPos = { x: 50, y: 100, dx: 1.2, dy: 0.9 };
@@ -56,16 +60,30 @@
       redirectToGoogle();
       return;
     }
-    setupSecurityShields();
     await checkTokenStatus();
   });
+
+  function formatTime(seconds) {
+    if (!seconds || seconds <= 0) return '∞ Infinity';
+    if (seconds >= 3600) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+    }
+    if (seconds >= 60) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}m ${s.toString().padStart(2, '0')}s`;
+    }
+    return `${seconds}s`;
+  }
 
   async function checkTokenStatus() {
     try {
       const res = await fetch(`/api/view/${token}/status`);
       const data = await res.json();
 
-      // If already viewed or burned or not found -> IMMEDIATELY REDIRECT TO GOOGLE!
       if (res.status === 404 || res.status === 410 || data.status === 'burned' || data.status === 'expired' || data.status === 'not_found') {
         redirectToGoogle();
         return;
@@ -74,7 +92,6 @@
       imageMetadata = data;
       showReadyScreen(data);
     } catch (e) {
-      console.error('Status check error:', e);
       redirectToGoogle();
     }
   }
@@ -84,10 +101,23 @@
     stateViewing.style.display = 'none';
     stateReady.style.display = 'block';
 
+    if (meta.senderUsername && senderUsernameDisplay) {
+      senderUsernameDisplay.innerText = `@${meta.senderUsername}`;
+    }
+
+    screenshotsAllowed = Boolean(meta.allowScreenshots);
+    downloadAllowed = Boolean(meta.allowDownload);
+
+    if (screenshotStatusInfo) {
+      screenshotStatusInfo.innerHTML = screenshotsAllowed
+        ? `<strong>Screenshots:</strong> <span style="color: var(--accent-green);">Allowed by creator</span>`
+        : `<strong>Screenshots:</strong> <span style="color: var(--accent-red);">Blocked (Strict shield active)</span>`;
+    }
+
     const dur = meta.viewDuration;
     sessionDurationInfo.innerHTML = dur > 0 
-      ? `<strong>Duration:</strong> ${dur} seconds timer before self-destruct`
-      : `<strong>Duration:</strong> Active until tab or window is closed`;
+      ? `<strong>Duration:</strong> ${formatTime(dur)} before self-destruct`
+      : `<strong>Duration:</strong> ∞ Infinity (until tab/window closed)`;
 
     unlockBtn.addEventListener('click', unlockAndDecrypt);
   }
@@ -100,20 +130,20 @@
     `;
 
     try {
-      // ATOMIC UNLOCK & SHRED CALL
       const res = await fetch(`/api/view/${token}/unlock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
 
       if (!res.ok) {
-        // If already unlocked or burned -> redirect to Google
         redirectToGoogle();
         return;
       }
 
       const payload = await res.json();
       imageMetadata = payload;
+      screenshotsAllowed = Boolean(payload.allowScreenshots);
+      downloadAllowed = Boolean(payload.allowDownload);
 
       const img = new Image();
       img.onload = () => {
@@ -133,7 +163,7 @@
     stateReady.style.display = 'none';
     stateViewing.style.display = 'block';
 
-    headerStatusText.innerText = 'DRM Active';
+    headerStatusText.innerText = screenshotsAllowed ? 'Screenshots Allowed' : 'DRM Armed';
     headerDot.style.background = '#00ff88';
 
     // Canvas sizing
@@ -142,20 +172,36 @@
     canvas.style.width = '100%';
     canvas.style.height = 'auto';
 
-    remainingSeconds = payload.view_duration_seconds || payload.viewDuration || 30;
-    isSpotlightActive = Boolean(payload.spotlight_mode || payload.spotlightMode);
+    remainingSeconds = payload.viewDuration !== undefined ? payload.viewDuration : 30;
+    isSpotlightActive = Boolean(payload.spotlightMode);
 
     if (isSpotlightActive) {
       spotlightHint.style.display = 'block';
     }
 
+    // Native Download Button (if allowed by uploader)
+    if (downloadAllowed && nativeDownloadBtn) {
+      nativeDownloadBtn.style.display = 'inline-flex';
+      nativeDownloadBtn.addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = payload.filename || 'view-once-image.png';
+        link.href = payload.data;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
+    }
+
+    // Setup Anti-Screenshot and security shields
+    setupSecurityShields();
+
     // Start Timer
     if (remainingSeconds > 0) {
-      timerDisplay.innerText = `${remainingSeconds}s`;
+      timerDisplay.innerText = formatTime(remainingSeconds);
       timerInterval = setInterval(() => {
         remainingSeconds--;
-        timerDisplay.innerText = `${remainingSeconds}s`;
-        if (remainingSeconds <= 5) {
+        timerDisplay.innerText = formatTime(remainingSeconds);
+        if (remainingSeconds <= 10) {
           timerDisplay.style.color = '#ff3366';
         }
         if (remainingSeconds <= 0) {
@@ -163,13 +209,12 @@
         }
       }, 1000);
     } else {
-      timerDisplay.innerText = 'Tab Session';
+      timerDisplay.innerText = '∞ Infinity';
+      if (timerSubtitle) timerSubtitle.innerText = 'Active until tab is closed';
     }
 
-    // Start Render Loop
     renderLoop();
 
-    // Burn early button
     burnEarlyBtn.addEventListener('click', () => {
       destroyAndBurn('Burned by user request.');
     });
@@ -179,7 +224,7 @@
   function renderLoop() {
     if (isBurned || !activeImage) return;
 
-    if (isWindowFocused) {
+    if (isWindowFocused || screenshotsAllowed) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (isSpotlightActive) {
@@ -215,7 +260,7 @@
         ctx.drawImage(activeImage, 0, 0, canvas.width, canvas.height);
       }
 
-      if (imageMetadata.watermark_enabled !== false && imageMetadata.watermarkEnabled !== false) {
+      if (imageMetadata.watermarkEnabled !== false) {
         drawForensicWatermark();
       }
     } else {
@@ -235,7 +280,7 @@
     if (watermarkPos.x < 20 || watermarkPos.x > canvas.width - 250) watermarkPos.dx *= -1;
     if (watermarkPos.y < 30 || watermarkPos.y > canvas.height - 80) watermarkPos.dy *= -1;
 
-    const ip = imageMetadata.viewer_ip || imageMetadata.viewerIp || '127.0.0.1';
+    const ip = imageMetadata.viewerIp || '127.0.0.1';
     const sender = imageMetadata.senderUsername || 'Confidential';
     const nowUtc = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
     const tokenTrace = token.substring(0, 8);
@@ -254,6 +299,11 @@
 
   // --- ANTI-SCREENSHOT & DEFENSE SHIELDS ---
   function setupSecurityShields() {
+    // If uploader allowed screenshots, don't arm anti-screenshot defenses
+    if (screenshotsAllowed) {
+      return;
+    }
+
     const handleBlur = () => {
       isWindowFocused = false;
       screenshotShield.classList.add('active');
@@ -269,7 +319,7 @@
       if (isBurned) return;
       isWindowFocused = true;
       screenshotShield.classList.remove('active');
-      headerStatusText.innerText = 'DRM Active';
+      headerStatusText.innerText = 'DRM Armed';
       headerDot.style.background = '#00ff88';
     };
 
@@ -350,7 +400,6 @@
       }
     }, { passive: false });
 
-    // DevTools Detection -> redirect to Google immediately
     setInterval(() => {
       if (isBurned) return;
       const widthThreshold = window.outerWidth - window.innerWidth > 160;
@@ -375,7 +424,6 @@
     if (timerInterval) clearInterval(timerInterval);
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
-    // Clear canvas immediately
     if (ctx && canvas) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#000000';
@@ -391,7 +439,6 @@
       });
     } catch (e) {}
 
-    // REDIRECT TO GOOGLE!
     redirectToGoogle();
   }
 })();
