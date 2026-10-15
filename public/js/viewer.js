@@ -119,6 +119,7 @@
       ? `<strong>Duration:</strong> ${formatTime(dur)} before self-destruct`
       : `<strong>Duration:</strong> ∞ Infinity (until tab/window closed)`;
 
+    setupSecurityShields();
     unlockBtn.addEventListener('click', unlockAndDecrypt);
   }
 
@@ -298,11 +299,14 @@
   }
 
   // --- ANTI-SCREENSHOT & DEFENSE SHIELDS ---
+  let securityShieldsConfigured = false;
   function setupSecurityShields() {
+    if (securityShieldsConfigured) return;
     // If uploader allowed screenshots, don't arm anti-screenshot defenses
     if (screenshotsAllowed) {
       return;
     }
+    securityShieldsConfigured = true;
 
     const handleBlur = () => {
       isWindowFocused = false;
@@ -313,13 +317,16 @@
         ctx.fillStyle = '#06080d';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
+      try {
+        navigator.clipboard?.writeText('DRM PROTECTED: Screenshots are disabled on OneView.');
+      } catch (err) {}
     };
 
     const handleFocus = () => {
       if (isBurned) return;
       isWindowFocused = true;
       screenshotShield.classList.remove('active');
-      headerStatusText.innerText = 'DRM Armed';
+      headerStatusText.innerText = screenshotsAllowed ? 'Screenshots Allowed' : 'DRM Armed';
       headerDot.style.background = '#00ff88';
     };
 
@@ -329,28 +336,41 @@
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         handleBlur();
-      } else {
+      } else if (document.hasFocus()) {
+        handleFocus();
+      }
+    });
+
+    // Detect cursor leaving window (e.g. moving toward snipping tool or screen capture menu)
+    document.addEventListener('mouseleave', () => {
+      if (!screenshotsAllowed) {
+        handleBlur();
+      }
+    });
+
+    document.addEventListener('mouseenter', () => {
+      if (document.hasFocus()) {
         handleFocus();
       }
     });
 
     window.addEventListener('keydown', (e) => {
       const isPrintScreen = e.key === 'PrintScreen' || e.keyCode === 44;
-      const isSnippingWin = (e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'S' || e.key === 's');
-      const isPrintCmd = (e.metaKey || e.ctrlKey) && (e.key === 'p' || e.key === 'P');
-      const isSaveCmd = (e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S');
+      const isWinKey = e.key === 'Meta' || e.code === 'MetaLeft' || e.code === 'MetaRight';
+      const isSnippingWin = (e.metaKey || e.ctrlKey || isWinKey) && (e.shiftKey || e.code === 'KeyS' || e.key === 'S' || e.key === 's');
+      const isPrintCmd = (e.metaKey || e.ctrlKey) && (e.key === 'p' || e.key === 'P' || e.code === 'KeyP');
+      const isSaveCmd = (e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S' || e.code === 'KeyS');
       const isDevTools = e.key === 'F12' || ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c'));
 
-      if (isPrintScreen || isSnippingWin || isPrintCmd || isSaveCmd || isDevTools) {
+      if (isPrintScreen || isWinKey || isSnippingWin || isPrintCmd || isSaveCmd || isDevTools) {
         e.preventDefault();
         e.stopPropagation();
 
         try {
-          navigator.clipboard?.writeText('DRM PROTECTED: Screenshots are disabled.');
+          navigator.clipboard?.writeText('DRM PROTECTED: Screenshots are disabled on OneView.');
         } catch (err) {}
 
         handleBlur();
-        setTimeout(handleFocus, 2000);
         return false;
       }
     }, true);

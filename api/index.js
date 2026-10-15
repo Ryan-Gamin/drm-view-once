@@ -7,7 +7,8 @@ const {
   getImageRecord,
   burnImageRecord,
   listUserImages,
-  deleteImageRecord
+  deleteImageRecord,
+  updateImageRecord
 } = require('./storage');
 
 const app = express();
@@ -122,7 +123,7 @@ app.post('/api/upload', async (req, res) => {
       allowScreenshots = false,
       allowDownload = false,
       spotlightMode = false,
-      watermarkEnabled = true
+      watermarkEnabled = false
     } = req.body;
 
     if (!fileData) {
@@ -317,6 +318,64 @@ app.delete('/api/images/:token', async (req, res) => {
   const token = req.params.token;
   const success = await deleteImageRecord(token, user.id);
   return res.json({ success });
+});
+
+app.patch('/api/images/:token', async (req, res) => {
+  const user = parseUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Username required' });
+  }
+  const token = req.params.token;
+  try {
+    const updated = await updateImageRecord(token, req.body, user.id);
+    if (!updated) {
+      return res.status(404).json({ error: 'Link not found or access denied' });
+    }
+    return res.json({
+      success: true,
+      message: 'Link updated successfully',
+      record: {
+        token: updated.token,
+        filename: updated.filename,
+        viewDuration: updated.viewDuration,
+        allowScreenshots: updated.allowScreenshots,
+        allowDownload: updated.allowDownload,
+        watermarkEnabled: updated.watermarkEnabled,
+        spotlightMode: updated.spotlightMode
+      }
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/images/:token', async (req, res) => {
+  const user = parseUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Username required' });
+  }
+  const token = req.params.token;
+  try {
+    const updated = await updateImageRecord(token, req.body, user.id);
+    if (!updated) {
+      return res.status(404).json({ error: 'Link not found or access denied' });
+    }
+    return res.json({
+      success: true,
+      message: 'Link updated successfully',
+      record: {
+        token: updated.token,
+        filename: updated.filename,
+        viewDuration: updated.viewDuration,
+        allowScreenshots: updated.allowScreenshots,
+        allowDownload: updated.allowDownload,
+        watermarkEnabled: updated.watermarkEnabled,
+        spotlightMode: updated.spotlightMode
+      }
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 });
 
 module.exports = app;

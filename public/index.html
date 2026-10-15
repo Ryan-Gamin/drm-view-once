@@ -81,7 +81,7 @@
           </p>
 
           <!-- Dropzone -->
-          <div id="dropzone" class="dropzone">
+          <div id="dropzone" class="dropzone" style="cursor: pointer;">
             <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
             <div class="dropzone-icon">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -90,16 +90,22 @@
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
             </div>
-            <p style="font-weight: 600; margin-bottom: 0.25rem;">Click to choose any image or drag & drop</p>
-            <p style="font-size: 0.8rem; color: var(--text-muted);">PNG, JPG, WEBP, GIF up to 25MB</p>
+            <p style="font-weight: 600; margin-bottom: 0.35rem; font-size: 1.05rem;">Click to choose image, drag & drop, or paste directly</p>
+            <p style="font-size: 0.85rem; color: var(--accent-cyan); margin-bottom: 0.35rem;">
+              Took a screenshot with <kbd style="background: rgba(255,255,255,0.12); padding: 2px 7px; border-radius: 4px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.25); color: #fff;">Win + Shift + S</kbd>? Just press <kbd style="background: rgba(255,255,255,0.12); padding: 2px 7px; border-radius: 4px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.25); color: #fff;">Ctrl + V</kbd> to paste!
+            </p>
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Supports PNG, JPG, WEBP, GIF</p>
           </div>
 
           <!-- File Selected Preview -->
           <div id="previewCard" class="preview-container" style="display: none;">
             <img id="previewThumb" class="preview-thumb" src="" alt="Thumbnail">
             <div style="flex: 1; min-width: 0;">
-              <p id="previewName" style="font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">filename.png</p>
-              <p id="previewSize" style="font-size: 0.8rem; color: var(--text-muted);">1.2 MB</p>
+              <p id="previewName" style="font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></p>
+              <div style="display: flex; align-items: center; gap: 0.75rem; margin-top: 0.25rem;">
+                <span id="previewSize" style="font-size: 0.85rem; color: var(--accent-cyan); font-weight: 600;"></span>
+                <span id="previewDimensions" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+              </div>
             </div>
             <button id="removeFileBtn" class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Change</button>
           </div>
@@ -107,24 +113,31 @@
           <!-- DRM Options Grid -->
           <div style="margin-top: 1.75rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
             
-            <!-- Exact Duration Options Requested -->
+            <!-- Exact Duration Options & Custom X Seconds -->
             <div class="form-group">
-              <label class="form-label" for="durationSelect">Viewing Duration</label>
+              <label class="form-label" for="durationSelect">Permanently Delete After (Viewing Duration)</label>
               <select id="durationSelect" class="form-select">
+                <option value="5">5s (Delete after 5 Seconds)</option>
+                <option value="10">10s (Delete after 10 Seconds)</option>
+                <option value="15">15s (Delete after 15 Seconds)</option>
+                <option value="30" selected>30s (Delete after 30 Seconds)</option>
+                <option value="60">60s (Delete after 1 Minute)</option>
+                <option value="180">3m (Delete after 3 Minutes)</option>
+                <option value="300">5m (Delete after 5 Minutes)</option>
+                <option value="600">10m (Delete after 10 Minutes)</option>
+                <option value="900">15m (Delete after 15 Minutes)</option>
+                <option value="1800">30m (Delete after 30 Minutes)</option>
+                <option value="2700">45m (Delete after 45 Minutes)</option>
+                <option value="3600">1h (Delete after 1 Hour)</option>
                 <option value="0">∞ Infinity (Until tab/window is closed)</option>
-                <option value="3600">1h (1 Hour)</option>
-                <option value="2700">45m (45 Minutes)</option>
-                <option value="1800">30m (30 Minutes)</option>
-                <option value="900">15m (15 Minutes)</option>
-                <option value="600">10m (10 Minutes)</option>
-                <option value="300">5m (5 Minutes)</option>
-                <option value="180">3m (3 Minutes)</option>
-                <option value="60">60s (1 Minute)</option>
-                <option value="30" selected>30s (30 Seconds)</option>
-                <option value="15">15s (15 Seconds)</option>
-                <option value="10">10s (10 Seconds)</option>
-                <option value="5">5s (5 Seconds)</option>
+                <option value="custom">⚙️ Custom X Seconds...</option>
               </select>
+              <div id="customDurationBox" style="display: none; margin-top: 0.5rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                  <input type="number" id="customDurationInput" class="form-input" min="1" max="86400" placeholder="e.g. 7" style="padding: 0.55rem 0.75rem; max-width: 140px;">
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">seconds (auto-deletes after X seconds)</span>
+                </div>
+              </div>
             </div>
 
             <!-- Permission Controls -->
@@ -157,7 +170,7 @@
                 <p style="font-weight: 600; font-size: 0.9rem;">Dynamic Forensic Watermark</p>
                 <p style="font-size: 0.8rem; color: var(--text-muted);">Bakes your username (@<span id="watermarkUsernamePreview">User</span>), viewer IP, and timestamp across the image</p>
               </div>
-              <input type="checkbox" id="watermarkToggle" class="switch-input" checked>
+              <input type="checkbox" id="watermarkToggle" class="switch-input">
             </label>
 
             <label class="switch-label">
@@ -244,6 +257,78 @@
       <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
         <a id="openLinkBtn" href="#" target="_blank" class="btn btn-secondary" style="flex: 1; text-align: center;">Test Link</a>
         <button id="closeModalBtn" class="btn btn-secondary" style="flex: 1;">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit / Extend Modal -->
+  <div id="editModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 480px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <div>
+          <h3 style="font-size: 1.25rem; font-weight: 700;">Edit & Extend Link</h3>
+          <p id="editFilenameDisplay" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;"></p>
+        </div>
+        <button id="closeEditModalBtn" class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">✕</button>
+      </div>
+
+      <input type="hidden" id="editTokenInput">
+
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label class="form-label" for="editDurationSelect">Extend / Change Viewing Duration</label>
+        <select id="editDurationSelect" class="form-select">
+          <option value="5">5s (Delete after 5 Seconds)</option>
+          <option value="10">10s (Delete after 10 Seconds)</option>
+          <option value="15">15s (Delete after 15 Seconds)</option>
+          <option value="30">30s (Delete after 30 Seconds)</option>
+          <option value="60">60s (Delete after 1 Minute)</option>
+          <option value="180">3m (Delete after 3 Minutes)</option>
+          <option value="300">5m (Delete after 5 Minutes)</option>
+          <option value="600">10m (Delete after 10 Minutes)</option>
+          <option value="900">15m (Delete after 15 Minutes)</option>
+          <option value="1800">30m (Delete after 30 Minutes)</option>
+          <option value="2700">45m (Delete after 45 Minutes)</option>
+          <option value="3600">1h (Delete after 1 Hour)</option>
+          <option value="0">∞ Infinity (Until tab/window closed)</option>
+          <option value="custom">⚙️ Custom X Seconds...</option>
+        </select>
+        <div id="editCustomDurationBox" style="display: none; margin-top: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="number" id="editCustomDurationInput" class="form-input" min="1" max="86400" placeholder="e.g. 45" style="padding: 0.55rem 0.75rem; max-width: 140px;">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">seconds</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.25rem;">
+        <label class="switch-label">
+          <div>
+            <p style="font-weight: 600; font-size: 0.85rem;">Allow Screenshots</p>
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Toggle whether defocus shield and anti-snipping are armed</p>
+          </div>
+          <input type="checkbox" id="editAllowScreenshotsToggle" class="switch-input">
+        </label>
+
+        <label class="switch-label">
+          <div>
+            <p style="font-weight: 600; font-size: 0.85rem;">Allow Download Button</p>
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Provide recipient a native download button</p>
+          </div>
+          <input type="checkbox" id="editAllowDownloadToggle" class="switch-input">
+        </label>
+
+        <label class="switch-label">
+          <div>
+            <p style="font-weight: 600; font-size: 0.85rem;">Forensic Watermark</p>
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Watermark with uploader, viewer IP, and timestamp</p>
+          </div>
+          <input type="checkbox" id="editWatermarkToggle" class="switch-input">
+        </label>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem;">
+        <button id="saveEditBtn" class="btn btn-primary" style="flex: 1; padding: 0.75rem;">Save & Update Link</button>
+        <button id="cancelEditBtn" class="btn btn-secondary" style="padding: 0.75rem 1rem;">Cancel</button>
       </div>
     </div>
   </div>

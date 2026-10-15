@@ -100,9 +100,38 @@ async function listUserImages(userId) {
   return images.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
+async function updateImageRecord(token, updates, userId) {
+  const record = await getImageRecord(token);
+  if (!record) return null;
+  if (userId && record.userId !== userId) return null;
+  if (record.isBurned || record.isViewed || record.is_burned || record.is_viewed) {
+    throw new Error('Cannot edit or extend an image link that has already been viewed or burned.');
+  }
+
+  if (updates.viewDuration !== undefined) {
+    record.viewDuration = parseInt(updates.viewDuration, 10) || 0;
+  }
+  if (updates.allowScreenshots !== undefined) {
+    record.allowScreenshots = Boolean(updates.allowScreenshots);
+  }
+  if (updates.allowDownload !== undefined) {
+    record.allowDownload = Boolean(updates.allowDownload);
+  }
+  if (updates.watermarkEnabled !== undefined) {
+    record.watermarkEnabled = Boolean(updates.watermarkEnabled);
+  }
+  if (updates.spotlightMode !== undefined) {
+    record.spotlightMode = Boolean(updates.spotlightMode);
+  }
+
+  localStore.set(token, record);
+  persistLocalStore();
+  return record;
+}
+
 async function deleteImageRecord(token, userId) {
   const record = await getImageRecord(token);
-  if (!record || record.userId !== userId) return false;
+  if (!record || (userId && record.userId !== userId)) return false;
   localStore.delete(token);
   persistLocalStore();
   return true;
@@ -113,5 +142,6 @@ module.exports = {
   getImageRecord,
   burnImageRecord,
   listUserImages,
-  deleteImageRecord
+  deleteImageRecord,
+  updateImageRecord
 };

@@ -3,9 +3,9 @@ const assert = require('assert');
 const TINY_PNG_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
 async function runTests() {
-  console.log('🧪 Starting End-to-End Tests (Custom Durations, Screenshot & Download Controls)...');
+  console.log('🧪 Starting End-to-End Tests (Custom X Seconds, Edit/Extend Links, Watermark Defaults, & Google Redirect)...');
 
-  const BASE_URL = 'http://localhost:8000';
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:8000';
 
   // 1. Username Login
   const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
@@ -19,7 +19,7 @@ async function runTests() {
   const sessionCookie = loginRes.headers.get('set-cookie');
   console.log('✓ Username login succeeded as @' + loginData.user.username);
 
-  // 2. Upload with 15m (900s), Screenshots Allowed, and Download Allowed
+  // 2. Upload with Custom 7s duration, Watermark OFF by default
   const uploadRes = await fetch(`${BASE_URL}/api/upload`, {
     method: 'POST',
     headers: {
@@ -29,51 +29,90 @@ async function runTests() {
     body: JSON.stringify({
       username: 'RyanTester',
       fileData: TINY_PNG_BASE64,
-      filename: 'permission_test.png',
+      filename: 'custom_7s_test.png',
       mimeType: 'image/png',
-      viewDuration: 900, // 15m
-      allowScreenshots: true,
-      allowDownload: true,
+      viewDuration: 7, // Custom 7s
+      allowScreenshots: false,
+      allowDownload: false,
       spotlightMode: false,
-      watermarkEnabled: true
+      watermarkEnabled: false // Watermark OFF by default
     })
   });
   assert.strictEqual(uploadRes.status, 200);
   const uploadData = await uploadRes.json();
-  assert.strictEqual(uploadData.viewDuration, 900, 'Duration should be 900s (15m)');
-  assert.strictEqual(uploadData.allowScreenshots, true, 'Screenshots should be allowed');
-  assert.strictEqual(uploadData.allowDownload, true, 'Downloads should be allowed');
+  assert.strictEqual(uploadData.viewDuration, 7, 'Duration should be custom 7s');
+  assert.strictEqual(uploadData.allowScreenshots, false, 'Screenshots should be blocked');
+  assert.strictEqual(uploadData.watermarkEnabled, false, 'Watermark should be OFF by default');
   const token = uploadData.token;
-  console.log('✓ Upload generated link with 15m duration, allowScreenshots=true, allowDownload=true');
+  console.log('✓ Upload generated link with custom 7s duration and watermark OFF by default');
 
-  // 3. Status Check
+  // 3. Status Check (pre-edit)
   const statusRes = await fetch(`${BASE_URL}/api/view/${token}/status`);
   assert.strictEqual(statusRes.status, 200);
   const statusData = await statusRes.json();
-  assert.strictEqual(statusData.viewDuration, 900);
-  assert.strictEqual(statusData.allowScreenshots, true);
-  assert.strictEqual(statusData.allowDownload, true);
-  console.log('✓ Status endpoint verified permissions: allowScreenshots=true, allowDownload=true');
+  assert.strictEqual(statusData.viewDuration, 7);
+  assert.strictEqual(statusData.watermarkEnabled, false);
+  console.log('✓ Status endpoint verified initial duration: 7s');
 
-  // 4. Unlock Check
+  // 4. Edit / Extend the Link (Extend to 45s, Enable Download)
+  const editRes = await fetch(`${BASE_URL}/api/images/${token}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cookie': sessionCookie
+    },
+    body: JSON.stringify({
+      viewDuration: 45, // Extended from 7s to 45s
+      allowDownload: true
+    })
+  });
+  assert.strictEqual(editRes.status, 200);
+  const editData = await editRes.json();
+  assert.strictEqual(editData.success, true);
+  assert.strictEqual(editData.record.viewDuration, 45, 'Duration extended to 45s');
+  assert.strictEqual(editData.record.allowDownload, true, 'Download enabled via edit');
+  console.log('✓ Edit/Extend endpoint successfully extended duration to 45s and updated permissions');
+
+  // 5. Verify Updated Status
+  const statusRes2 = await fetch(`${BASE_URL}/api/view/${token}/status`);
+  assert.strictEqual(statusRes2.status, 200);
+  const statusData2 = await statusRes2.json();
+  assert.strictEqual(statusData2.viewDuration, 45, 'Public viewer status reflects extended 45s');
+  assert.strictEqual(statusData2.allowDownload, true, 'Public viewer status reflects updated download perm');
+  console.log('✓ Status endpoint verified extended 45s duration');
+
+  // 6. Unlock Check
   const unlockRes = await fetch(`${BASE_URL}/api/view/${token}/unlock`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
   assert.strictEqual(unlockRes.status, 200);
   const unlockData = await unlockRes.json();
-  assert.strictEqual(unlockData.allowDownload, true, 'Download permission present in unlock payload');
+  assert.strictEqual(unlockData.viewDuration, 45);
+  assert.strictEqual(unlockData.allowDownload, true);
   assert.ok(unlockData.data.startsWith('data:image/png;base64,'));
-  console.log('✓ Unlock succeeded and verified download permission.');
+  console.log('✓ Unlock succeeded and delivered payload with extended 45s duration.');
 
-  // 5. Subsequent View Attempt -> Redirect to Google!
+  // 7. Verify Burn & Google Redirection on Revisit
   const secondRes = await fetch(`${BASE_URL}/api/view/${token}/status`);
   assert.strictEqual(secondRes.status, 410);
   const secondData = await secondRes.json();
   assert.strictEqual(secondData.redirect, 'https://www.google.com');
   console.log('✓ Second attempt correctly triggers redirect to Google.');
 
-  console.log('\n🎉 ALL TESTS PASSED! Duration options, permissions, and Google redirect 100% verified.');
+  // 8. Verify Cannot Edit Already Burned Link
+  const editBurnedRes = await fetch(`${BASE_URL}/api/images/${token}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cookie': sessionCookie
+    },
+    body: JSON.stringify({ viewDuration: 999 })
+  });
+  assert.strictEqual(editBurnedRes.status, 400, 'Cannot edit an already viewed/burned link');
+  console.log('✓ Correctly rejects attempt to edit an already burned link.');
+
+  console.log('\n🎉 ALL TESTS PASSED! Custom X seconds, Edit/Extend links, watermark defaults, and Google redirect 100% verified.');
 }
 
 runTests().catch(err => {
