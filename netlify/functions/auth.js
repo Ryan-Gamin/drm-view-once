@@ -2,7 +2,6 @@ const jwt = require('jsonwebtoken');
 const { stringifySetCookie } = require('cookie');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'drm-vault-jwt-session-secret-key-9988';
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 
 function parseUser(event) {
   const cookieHeader = event.headers.cookie || event.headers.Cookie || '';
@@ -22,14 +21,14 @@ function parseUser(event) {
 }
 
 function makeCookieHeader(userData) {
-  const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '30d' });
   return stringifySetCookie({
     name: 'vault_session',
     value: token,
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60,
+    maxAge: 30 * 24 * 60 * 60,
     path: '/'
   });
 }
@@ -38,7 +37,6 @@ exports.handler = async (event) => {
   const method = event.httpMethod;
   const path = event.path;
 
-  // CORS headers
   const headers = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
@@ -50,22 +48,10 @@ exports.handler = async (event) => {
     return { statusCode: 204, headers };
   }
 
-  // GET /api/auth/config
-  if (method === 'GET' && path.endsWith('/config')) {
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        google_client_id: GOOGLE_CLIENT_ID,
-        demo_mode_available: true
-      })
-    };
-  }
-
   // GET /api/auth/me
   if (method === 'GET' && path.endsWith('/me')) {
     const user = parseUser(event);
-    if (!user) {
+    if (!user || !user.username) {
       return {
         statusCode: 200,
         headers,
@@ -79,27 +65,32 @@ exports.handler = async (event) => {
     };
   }
 
-  // POST /api/auth/google
-  if (method === 'POST' && path.endsWith('/google')) {
+  // POST /api/auth/login (Login with any Username)
+  if (method === 'POST' && (path.endsWith('/login') || path.endsWith('/username'))) {
     try {
       const body = JSON.parse(event.body || '{}');
-      const credential = body.credential;
-      if (!credential) {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing credential token' }) };
+      const rawUsername = body.username ? String(body.username).trim() : '';
+
+      if (!rawUsername || rawUsername.length < 2) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Please enter a username (at least 2 characters).' })
+        };
       }
 
-      // Verify Google ID token using Google tokeninfo API
-      const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
-      if (!res.ok) {
-        return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid Google credential token' }) };
+      if (rawUsername.length > 30) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'Username cannot exceed 30 characters.' })
+        };
       }
-      const data = await res.json();
 
       const user = {
-        id: 'google_' + data.sub,
-        email: data.email,
-        name: data.name || data.email.split('@')[0],
-        picture: data.picture || ''
+        id: 'user_' + rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
+        username: rawUsername,
+        avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(rawUsername)}`
       };
 
       const setCookie = makeCookieHeader(user);
@@ -114,26 +105,6 @@ exports.handler = async (event) => {
     } catch (e) {
       return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };
     }
-  }
-
-  // POST /api/auth/demo
-  if (method === 'POST' && path.endsWith('/demo')) {
-    const user = {
-      id: 'demo_user_123',
-      email: 'ryan.tester@drm-vault.local',
-      name: 'Ryan (Demo Google User)',
-      picture: 'https://api.dicebear.com/7.x/bottts/svg?seed=ryan_secure'
-    };
-
-    const setCookie = makeCookieHeader(user);
-    return {
-      statusCode: 200,
-      headers: {
-        ...headers,
-        'Set-Cookie': setCookie
-      },
-      body: JSON.stringify({ success: true, user })
-    };
   }
 
   // POST /api/auth/logout
@@ -155,5 +126,5 @@ exports.handler = async (event) => {
     };
   }
 
-  return { statusCode: 404, headers, body: JSON.stringify({ error: 'Auth endpoint not found' }) };
+  return { statusCode: 404, headers, body: JSON.stringify({ error: 'Endpoint not found' }) };
 };

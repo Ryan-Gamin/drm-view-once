@@ -30,9 +30,7 @@ exports.handler = async (event) => {
     return { statusCode: 204, headers: corsHeaders };
   }
 
-  // Extract token from path e.g. /api/view/:token/status or /api/view/:token/unlock
   const segments = path.split('/').filter(Boolean);
-  // Expected: ['api', 'view', '<token>', '<action>']
   const tokenIndex = segments.indexOf('view') + 1;
   const token = segments[tokenIndex];
   const action = segments[tokenIndex + 1] || 'status';
@@ -47,33 +45,41 @@ exports.handler = async (event) => {
     if (!record) {
       return {
         statusCode: 404,
-        headers: corsHeaders,
-        body: JSON.stringify({ status: 'not_found', message: 'This view-once link does not exist.' })
+        headers: {
+          ...corsHeaders,
+          'Location': 'https://www.google.com'
+        },
+        body: JSON.stringify({ status: 'not_found', redirect: 'https://www.google.com' })
       };
     }
 
     if (record.isBurned || record.isViewed) {
+      // Already viewed once -> signal redirect to Google!
       return {
         statusCode: 410,
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          'Location': 'https://www.google.com'
+        },
         body: JSON.stringify({
           status: 'burned',
-          message: 'This view-once image has already been viewed and permanently purged from server memory.',
-          burnedAt: record.burnedAt || record.viewedAt,
-          reason: record.burnReason || 'Single-view limit reached'
+          redirect: 'https://www.google.com',
+          message: 'This view-once image has already been viewed.'
         })
       };
     }
 
-    // Check expiration
     if (record.expiresAt && new Date() > new Date(record.expiresAt)) {
       await burnImageRecord(token, 'expired_before_view');
       return {
         statusCode: 410,
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          'Location': 'https://www.google.com'
+        },
         body: JSON.stringify({
           status: 'expired',
-          message: 'This view-once link has expired.'
+          redirect: 'https://www.google.com'
         })
       };
     }
@@ -83,6 +89,7 @@ exports.handler = async (event) => {
       headers: corsHeaders,
       body: JSON.stringify({
         status: 'ready',
+        senderUsername: record.senderUsername || 'Confidential',
         filename: record.filename,
         filesize: record.filesize,
         viewDuration: record.viewDuration,
@@ -99,17 +106,18 @@ exports.handler = async (event) => {
     if (!record) {
       return {
         statusCode: 404,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'One-time link not found' })
+        headers: { ...corsHeaders, 'Location': 'https://www.google.com' },
+        body: JSON.stringify({ error: 'One-time link not found', redirect: 'https://www.google.com' })
       };
     }
 
     if (record.isBurned || record.isViewed) {
       return {
         statusCode: 410,
-        headers: corsHeaders,
+        headers: { ...corsHeaders, 'Location': 'https://www.google.com' },
         body: JSON.stringify({
-          error: 'This view-once image has already been viewed and permanently destroyed.'
+          error: 'This view-once image has already been viewed.',
+          redirect: 'https://www.google.com'
         })
       };
     }
@@ -122,8 +130,8 @@ exports.handler = async (event) => {
     if (!record.encryptedData || !record.iv || !record.authTag) {
       return {
         statusCode: 410,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'Image data already purged' })
+        headers: { ...corsHeaders, 'Location': 'https://www.google.com' },
+        body: JSON.stringify({ error: 'Image data already purged', redirect: 'https://www.google.com' })
       };
     }
 
@@ -139,7 +147,7 @@ exports.handler = async (event) => {
       };
     }
 
-    // ATOMIC SHRED: Purge encrypted data from storage right now!
+    // ATOMIC SHRED: Purge encrypted data from storage immediately
     await burnImageRecord(token, 'view_unlocked_and_shredded');
 
     const b64 = decryptedBuffer.toString('base64');
@@ -154,6 +162,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         success: true,
         data: dataUri,
+        senderUsername: record.senderUsername || 'Confidential',
         mimeType: record.mimeType,
         viewDuration: record.viewDuration,
         spotlightMode: record.spotlightMode,
@@ -173,7 +182,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({ success: true, burned: true })
+      body: JSON.stringify({ success: true, burned: true, redirect: 'https://www.google.com' })
     };
   }
 

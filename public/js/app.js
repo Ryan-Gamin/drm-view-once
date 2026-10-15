@@ -1,14 +1,16 @@
-// DRM View-Once Vault - Dashboard Client
-let currentUser = null;
+// DRM View-Once Vault - Dashboard Client (Username-Only Flow)
+let currentUsername = localStorage.getItem('drm_username') || '';
 let selectedFile = null;
 let selectedFileDataUri = null;
 let qrCodeInstance = null;
 
 // DOM Elements
-const authContainer = document.getElementById('authContainer');
-const loginPromptSection = document.getElementById('loginPromptSection');
+const userHeaderContainer = document.getElementById('userHeaderContainer');
+const usernamePromptSection = document.getElementById('usernamePromptSection');
 const dashboardSection = document.getElementById('dashboardSection');
-const demoLoginBtn = document.getElementById('demoLoginBtn');
+const usernameForm = document.getElementById('usernameForm');
+const usernameInput = document.getElementById('usernameInput');
+const watermarkUsernamePreview = document.getElementById('watermarkUsernamePreview');
 
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
@@ -36,120 +38,84 @@ const closeModalBtn = document.getElementById('closeModalBtn');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-  await checkAuth();
   setupEventListeners();
+  if (currentUsername) {
+    await loginWithUsername(currentUsername, false);
+  } else {
+    showUsernamePrompt();
+  }
 });
 
-async function checkAuth() {
+async function loginWithUsername(name, save = true) {
   try {
-    const res = await fetch('/api/auth/me');
-    const data = await res.json();
-    if (data.authenticated && data.user) {
-      currentUser = data.user;
-      renderLoggedIn();
-    } else {
-      currentUser = null;
-      renderLoggedOut();
-      setupGoogleAuth();
-    }
-  } catch (e) {
-    console.error('Auth check error:', e);
-    renderLoggedOut();
-  }
-}
-
-async function setupGoogleAuth() {
-  try {
-    const res = await fetch('/api/auth/config');
-    const config = await res.json();
-    const clientId = config.google_client_id;
-
-    if (clientId && window.google) {
-      google.accounts.id.initialize({
-        client_id: clientId,
-        callback: handleGoogleCredential
-      });
-      const btnWrapper = document.getElementById('googleSignInBtn');
-      if (btnWrapper) {
-        google.accounts.id.renderButton(btnWrapper, {
-          theme: 'filled_blue',
-          size: 'large',
-          text: 'signin_with',
-          shape: 'pill'
-        });
-      }
-    }
-  } catch (e) {
-    console.warn('Google auth init error:', e);
-  }
-}
-
-async function handleGoogleCredential(response) {
-  try {
-    const res = await fetch('/api/auth/google', {
+    const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: response.credential })
+      body: JSON.stringify({ username: name })
     });
     const data = await res.json();
-    if (data.success) {
-      currentUser = data.user;
-      renderLoggedIn();
+    if (data.success && data.user) {
+      currentUsername = data.user.username;
+      if (save) localStorage.setItem('drm_username', currentUsername);
+      renderActiveUser();
+      loadUserLinks();
     } else {
-      alert('Google authentication failed: ' + (data.error || 'Unknown error'));
+      showUsernamePrompt();
     }
   } catch (e) {
-    alert('Authentication error: ' + e.message);
+    currentUsername = name;
+    renderActiveUser();
   }
 }
 
-function renderLoggedIn() {
-  authContainer.innerHTML = `
+function showUsernamePrompt() {
+  usernamePromptSection.style.display = 'block';
+  dashboardSection.style.display = 'none';
+  userHeaderContainer.innerHTML = '';
+}
+
+function renderActiveUser() {
+  usernamePromptSection.style.display = 'none';
+  dashboardSection.style.display = 'block';
+
+  watermarkUsernamePreview.innerText = currentUsername;
+
+  const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentUsername)}`;
+
+  userHeaderContainer.innerHTML = `
     <div class="user-bar">
-      <img src="${currentUser.picture || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + currentUser.id}" class="user-avatar" alt="Avatar">
+      <img src="${avatarUrl}" class="user-avatar" alt="Avatar">
       <div style="font-size: 0.85rem;">
-        <p style="font-weight: 600;">${currentUser.name || 'User'}</p>
-        <p style="color: var(--text-muted); font-size: 0.75rem;">${currentUser.email}</p>
+        <p style="font-weight: 700; color: var(--accent-cyan);">@${currentUsername}</p>
+        <p style="color: var(--text-muted); font-size: 0.75rem;">Sender Active</p>
       </div>
-      <button id="logoutBtn" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; margin-left: 0.5rem;">Sign Out</button>
+      <button id="switchUserBtn" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; margin-left: 0.5rem;">
+        Change
+      </button>
     </div>
   `;
 
-  document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    location.reload();
+  document.getElementById('switchUserBtn')?.addEventListener('click', () => {
+    localStorage.removeItem('drm_username');
+    currentUsername = '';
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    showUsernamePrompt();
+    usernameInput.value = '';
+    usernameInput.focus();
   });
-
-  loginPromptSection.style.display = 'none';
-  dashboardSection.style.display = 'block';
-
-  loadUserLinks();
-}
-
-function renderLoggedOut() {
-  authContainer.innerHTML = `
-    <div style="font-size: 0.85rem; color: var(--text-muted);">Not signed in</div>
-  `;
-  loginPromptSection.style.display = 'block';
-  dashboardSection.style.display = 'none';
 }
 
 function setupEventListeners() {
-  // Demo Login
-  demoLoginBtn?.addEventListener('click', async () => {
-    try {
-      const res = await fetch('/api/auth/demo', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        currentUser = data.user;
-        renderLoggedIn();
-      }
-    } catch (e) {
-      alert('Demo login failed: ' + e.message);
+  // Username submission
+  usernameForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const val = usernameInput.value.trim();
+    if (val) {
+      await loginWithUsername(val, true);
     }
   });
 
-  // Dropzone clicks & drag-and-drop
+  // Dropzone interactions
   dropzone.addEventListener('click', () => fileInput.click());
   
   ['dragenter', 'dragover'].forEach(name => {
@@ -183,10 +149,7 @@ function setupEventListeners() {
     resetFileSelection();
   });
 
-  // Upload button
   uploadBtn.addEventListener('click', handleUpload);
-
-  // Refresh links
   refreshLinksBtn?.addEventListener('click', loadUserLinks);
 
   // Modal actions
@@ -242,16 +205,17 @@ function resetFileSelection() {
 }
 
 async function handleUpload() {
-  if (!selectedFile || !selectedFileDataUri) return;
+  if (!selectedFile || !selectedFileDataUri || !currentUsername) return;
 
   uploadBtn.disabled = true;
   uploadBtn.innerHTML = `
     <svg style="animation: spin 1s linear infinite;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
-    <span>Encrypting & Generating Link...</span>
+    <span>Encrypting & Arming DRM...</span>
   `;
 
   try {
     const payload = {
+      username: currentUsername,
       fileData: selectedFileDataUri,
       filename: selectedFile.name,
       mimeType: selectedFile.type,
@@ -272,7 +236,6 @@ async function handleUpload() {
       throw new Error(data.error || 'Upload failed');
     }
 
-    // Success! Show share modal
     showShareModal(data.token);
     resetFileSelection();
     loadUserLinks();
@@ -282,7 +245,7 @@ async function handleUpload() {
     uploadBtn.disabled = false;
     uploadBtn.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-      <span>Create View-Once DRM Link</span>
+      <span>Generate View-Once DRM Link</span>
     `;
   }
 }
@@ -292,7 +255,6 @@ function showShareModal(token) {
   shareUrlInput.value = shareUrl;
   openLinkBtn.href = shareUrl;
 
-  // Render QR Code
   const qrContainer = document.getElementById('qrcode');
   qrContainer.innerHTML = '';
   if (window.QRCode) {
@@ -327,7 +289,7 @@ async function loadUserLinks() {
     linksTableBody.innerHTML = images.map(img => {
       let badge = '<span class="badge badge-active">Active (Unopened)</span>';
       if (img.isBurned || img.isViewed) {
-        badge = '<span class="badge badge-burned">Burned / Shredded</span>';
+        badge = '<span class="badge badge-burned">Burned → Redirects to Google</span>';
       }
 
       const createdDate = new Date(img.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -356,7 +318,7 @@ async function loadUserLinks() {
 }
 
 window.deleteLink = async (token) => {
-  if (!confirm('Are you sure you want to revoke and shred this link immediately?')) return;
+  if (!confirm('Are you sure you want to revoke and shred this link immediately? Any future visitors will redirect to Google.')) return;
   try {
     await fetch(`/api/images/${token}`, { method: 'DELETE' });
     loadUserLinks();

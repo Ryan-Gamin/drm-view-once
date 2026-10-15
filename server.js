@@ -8,6 +8,7 @@ const authHandler = require('./netlify/functions/auth').handler;
 const uploadHandler = require('./netlify/functions/upload').handler;
 const viewHandler = require('./netlify/functions/view').handler;
 const imagesHandler = require('./netlify/functions/images').handler;
+const { getImageRecord } = require('./netlify/functions/storage');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -50,8 +51,17 @@ app.post('/api/upload', adaptNetlify(uploadHandler));
 app.use('/api/view', adaptNetlify(viewHandler));
 app.use('/api/images', adaptNetlify(imagesHandler));
 
-// Clean URL rewrite for /v/:token
-app.get('/v/:token', (req, res) => {
+// Clean URL rewrite for /v/:token (If already viewed, immediately redirect to Google)
+app.get('/v/:token', async (req, res) => {
+  const token = req.params.token;
+  try {
+    const record = await getImageRecord(token);
+    if (record && (record.isBurned || record.isViewed)) {
+      return res.redirect(302, 'https://www.google.com');
+    }
+  } catch (e) {
+    // Proceed to viewer.html which handles client-side check
+  }
   res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
 });
 

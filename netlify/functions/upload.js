@@ -37,17 +37,23 @@ exports.handler = async (event) => {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
   }
 
-  const user = parseUser(event);
-  if (!user) {
-    return { statusCode: 401, headers, body: JSON.stringify({ error: 'Authentication required. Please sign in with Google.' }) };
-  }
-
   try {
     let body = {};
     if (event.isBase64Encoded) {
       body = JSON.parse(Buffer.from(event.body, 'base64').toString('utf8'));
     } else {
       body = JSON.parse(event.body || '{}');
+    }
+
+    const user = parseUser(event);
+    const username = (body.username ? String(body.username).trim() : null) || (user ? user.username : null);
+
+    if (!username) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: 'Please enter a username to send an image.' })
+      };
     }
 
     const {
@@ -64,7 +70,6 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'No image data provided' }) };
     }
 
-    // Strip data URI prefix if present
     const cleanBase64 = fileData.replace(/^data:image\/[a-z0-9+]+;base64,/, '');
     const buffer = Buffer.from(cleanBase64, 'base64');
 
@@ -80,8 +85,8 @@ exports.handler = async (event) => {
 
     const record = {
       token,
-      userId: user.id,
-      userEmail: user.email,
+      userId: user ? user.id : 'user_' + username.toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
+      senderUsername: username,
       filename,
       mimeType,
       filesize: buffer.length,
@@ -110,6 +115,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         success: true,
         token,
+        senderUsername: username,
         filename,
         viewDuration: record.viewDuration,
         spotlightMode: record.spotlightMode,
