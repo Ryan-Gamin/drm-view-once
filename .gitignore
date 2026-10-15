@@ -9,3 +9,4 @@ dist/
 .netlify/
 /tmp/drm_vault_store.json
 vault.db
+.vercel

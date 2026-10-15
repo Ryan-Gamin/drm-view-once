@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
 const SECRET = process.env.ENCRYPTION_SECRET || 'drm-view-once-secure-vault-encryption-secret-key';
-const KEY = crypto.createHash('sha256').update(SECRET).digest(); // 32-byte key
+const KEY = crypto.createHash('sha256').update(SECRET).digest();
 
 function generateToken(length = 24) {
   return crypto.randomBytes(length).toString('base64url');
