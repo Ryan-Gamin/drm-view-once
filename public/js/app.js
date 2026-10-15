@@ -63,9 +63,29 @@ const saveEditBtn = document.getElementById('saveEditBtn');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
 const closeEditModalBtn = document.getElementById('closeEditModalBtn');
 
+let currentUserData = null;
+try {
+  const cached = localStorage.getItem('drm_user_data');
+  if (cached) currentUserData = JSON.parse(cached);
+} catch (e) {}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
+  try {
+    const authRes = await fetch('/api/auth/me');
+    const authData = await authRes.json();
+    if (authData.authenticated && authData.user) {
+      currentUserData = authData.user;
+      currentUsername = authData.user.username;
+      localStorage.setItem('drm_username', currentUsername);
+      localStorage.setItem('drm_user_data', JSON.stringify(currentUserData));
+      renderActiveUser();
+      loadUserLinks();
+      return;
+    }
+  } catch (e) {}
+
   if (currentUsername) {
     await loginWithUsername(currentUsername, false);
   } else {
@@ -96,12 +116,17 @@ async function loginWithUsername(name, save = true) {
       body: JSON.stringify({ username: name })
     });
     const data = await res.json();
-    if (data.success && data.user) {
+    if (res.ok && data.success && data.user) {
+      currentUserData = data.user;
       currentUsername = data.user.username;
-      if (save) localStorage.setItem('drm_username', currentUsername);
+      if (save) {
+        localStorage.setItem('drm_username', currentUsername);
+        localStorage.setItem('drm_user_data', JSON.stringify(currentUserData));
+      }
       renderActiveUser();
       loadUserLinks();
     } else {
+      alert(data.error || 'Failed to initialize ephemeral username.');
       showUsernamePrompt();
     }
   } catch (e) {
@@ -116,6 +141,22 @@ function showUsernamePrompt() {
   userHeaderContainer.innerHTML = '';
 }
 
+function openClaimModal() {
+  const claimModal = document.getElementById('claimModal');
+  const claimedUsernameInput = document.getElementById('claimedUsernameInput');
+  const claimErrorText = document.getElementById('claimErrorText');
+  if (claimedUsernameInput) {
+    claimedUsernameInput.value = currentUsername || '';
+  }
+  if (claimErrorText) claimErrorText.style.display = 'none';
+  if (claimModal) claimModal.classList.add('active');
+}
+
+function closeClaimModal() {
+  const claimModal = document.getElementById('claimModal');
+  if (claimModal) claimModal.classList.remove('active');
+}
+
 function renderActiveUser() {
   usernamePromptSection.style.display = 'none';
   dashboardSection.style.display = 'block';
@@ -124,24 +165,60 @@ function renderActiveUser() {
     watermarkUsernamePreview.innerText = currentUsername;
   }
 
-  const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentUsername)}`;
+  const isGoogle = Boolean(currentUserData && currentUserData.isGoogleVerified);
+  const avatarUrl = (currentUserData && currentUserData.avatar) || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentUsername)}`;
+
+  const badgeHtml = isGoogle
+    ? `<span style="display: inline-flex; align-items: center; gap: 0.35rem; background: rgba(66, 133, 244, 0.15); color: #4285f4; border: 1px solid rgba(66, 133, 244, 0.4); padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700;">
+         <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+         Google Verified (Permanent)
+       </span>`
+    : `<span style="display: inline-flex; align-items: center; gap: 0.35rem; background: rgba(255, 170, 0, 0.15); color: #ffaa00; border: 1px solid rgba(255, 170, 0, 0.35); padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700;">
+         ⏱️ 12h Ephemeral
+       </span>`;
+
+  const extraBtnHtml = isGoogle
+    ? `<button id="claimUsernameBtn" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; border-color: rgba(66, 133, 244, 0.4); color: #64b5f6;">
+         Claim Handle
+       </button>`
+    : `<button id="upgradeToGoogleBtn" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; border-color: rgba(66, 133, 244, 0.4); color: #64b5f6;">
+         Verify with Google
+       </button>`;
 
   userHeaderContainer.innerHTML = `
     <div class="user-bar">
       <img src="${avatarUrl}" class="user-avatar" alt="Avatar">
       <div style="font-size: 0.85rem;">
-        <p style="font-weight: 700; color: var(--accent-cyan);">@${currentUsername}</p>
-        <p style="color: var(--text-muted); font-size: 0.75rem;">Sender Active</p>
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+          <p style="font-weight: 700; color: var(--accent-cyan);">@${currentUsername}</p>
+          ${badgeHtml}
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.72rem;">${isGoogle ? 'Option 4 Forensic Matrix Active' : 'Account & images expire after 12h'}</p>
       </div>
-      <button id="switchUserBtn" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; margin-left: 0.5rem;">
-        Change
-      </button>
+      <div style="display: flex; align-items: center; gap: 0.4rem; margin-left: 0.5rem;">
+        ${extraBtnHtml}
+        <button id="switchUserBtn" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;">
+          Logout
+        </button>
+      </div>
     </div>
   `;
 
-  document.getElementById('switchUserBtn')?.addEventListener('click', () => {
+  document.getElementById('claimUsernameBtn')?.addEventListener('click', openClaimModal);
+  document.getElementById('upgradeToGoogleBtn')?.addEventListener('click', () => {
+    document.getElementById('googleSignInBtn')?.click();
+  });
+
+  document.getElementById('switchUserBtn')?.addEventListener('click', async () => {
     localStorage.removeItem('drm_username');
+    localStorage.removeItem('drm_user_data');
+    currentUserData = null;
     currentUsername = '';
+    if (window.firebaseAuth && window.firebaseAuth.auth) {
+      try {
+        await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+      } catch (e) {}
+    }
     fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     showUsernamePrompt();
     usernameInput.value = '';
@@ -176,6 +253,105 @@ function setupEventListeners() {
       await loginWithUsername(val, true);
     }
   });
+
+  const googleSignInBtn = document.getElementById('googleSignInBtn');
+  googleSignInBtn?.addEventListener('click', async () => {
+    try {
+      if (!window.firebaseAuth) {
+        alert('Firebase Auth is initializing. Please wait a moment and click again.');
+        return;
+      }
+      const { auth, provider, signInWithPopup } = window.firebaseAuth;
+      const res = await signInWithPopup(auth, provider);
+      const googleUser = res.user;
+
+      const backendRes = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          googleUid: googleUser.uid,
+          email: googleUser.email,
+          displayName: googleUser.displayName,
+          photoURL: googleUser.photoURL
+        })
+      });
+
+      const data = await backendRes.json();
+      if (!backendRes.ok || !data.success) {
+        alert(data.error || 'Failed to authenticate Google account with server.');
+        return;
+      }
+
+      currentUserData = data.user;
+      currentUsername = data.user.username;
+      localStorage.setItem('drm_username', currentUsername);
+      localStorage.setItem('drm_user_data', JSON.stringify(currentUserData));
+      renderActiveUser();
+      loadUserLinks();
+    } catch (err) {
+      console.error('Google Sign-In Error:', err);
+      if (err.code !== 'auth/popup-closed-by-user') {
+        alert(`Google Sign-In: ${err.message}`);
+      }
+    }
+  });
+
+  const claimUsernameForm = document.getElementById('claimUsernameForm');
+  claimUsernameForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const claimedUsernameInput = document.getElementById('claimedUsernameInput');
+    const claimErrorText = document.getElementById('claimErrorText');
+    const submitClaimBtn = document.getElementById('submitClaimBtn');
+
+    const newHandle = claimedUsernameInput.value.trim();
+    if (!newHandle) return;
+
+    submitClaimBtn.disabled = true;
+    submitClaimBtn.innerText = 'Locking...';
+
+    try {
+      const googleUid = currentUserData?.googleUid || (window.firebaseAuth?.auth?.currentUser?.uid);
+      if (!googleUid) {
+        throw new Error('Please sign in with Google to claim a permanent username.');
+      }
+
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          googleUid,
+          email: currentUserData?.email || '',
+          displayName: currentUserData?.displayName || '',
+          photoURL: currentUserData?.avatar || '',
+          claimedUsername: newHandle
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to claim username.');
+      }
+
+      currentUserData = data.user;
+      currentUsername = data.user.username;
+      localStorage.setItem('drm_username', currentUsername);
+      localStorage.setItem('drm_user_data', JSON.stringify(currentUserData));
+      renderActiveUser();
+      loadUserLinks();
+      closeClaimModal();
+    } catch (err) {
+      if (claimErrorText) {
+        claimErrorText.innerText = err.message;
+        claimErrorText.style.display = 'block';
+      }
+    } finally {
+      submitClaimBtn.disabled = false;
+      submitClaimBtn.innerText = 'Claim & Lock Username';
+    }
+  });
+
+  document.getElementById('closeClaimModalBtn')?.addEventListener('click', closeClaimModal);
+  document.getElementById('cancelClaimBtn')?.addEventListener('click', closeClaimModal);
 
   allowScreenshotsToggle?.addEventListener('change', () => {
     if (screenshotPermText) {

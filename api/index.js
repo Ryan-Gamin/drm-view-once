@@ -8,7 +8,12 @@ const {
   burnImageRecord,
   listUserImages,
   deleteImageRecord,
-  updateImageRecord
+  updateImageRecord,
+  getGoogleUserClaimedUsername,
+  claimUsernameForGoogle,
+  registerEphemeralUsername,
+  isUsernameClaimed,
+  cleanupExpiredAccounts
 } = require('./storage');
 
 const app = express();
@@ -65,7 +70,7 @@ app.get(['/api/auth', '/api/auth/me'], (req, res) => {
   return res.json({ authenticated: true, user });
 });
 
-app.post(['/api/auth/login', '/api/auth/username'], (req, res) => {
+app.post(['/api/auth/login', '/api/auth/username'], async (req, res) => {
   const rawUsername = req.body.username ? String(req.body.username).trim() : '';
 
   if (!rawUsername || rawUsername.length < 2) {
@@ -76,23 +81,111 @@ app.post(['/api/auth/login', '/api/auth/username'], (req, res) => {
     return res.status(400).json({ error: 'Username cannot exceed 30 characters.' });
   }
 
-  const user = {
-    id: 'user_' + rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
-    username: rawUsername,
-    avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(rawUsername)}`
-  };
+  try {
+    const account = await registerEphemeralUsername(rawUsername);
+    const user = {
+      id: 'user_' + rawUsername.toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
+      username: rawUsername,
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(rawUsername)}`,
+      isGoogleVerified: false,
+      expiresAt: account.expiresAt
+    };
 
-  const token = jwt.sign(user, JWT_SECRET, { expiresIn: '30d' });
-  const setCookie = stringifyCookie('vault_session', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
-    maxAge: 30 * 24 * 60 * 60,
-    path: '/'
+    const token = jwt.sign(user, JWT_SECRET, { expiresIn: '12h' });
+    const setCookie = stringifyCookie('vault_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
+      maxAge: 12 * 60 * 60, // 12 hours ephemeral
+      path: '/'
+    });
+
+    res.setHeader('Set-Cookie', setCookie);
+    return res.json({ success: true, user });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Check if a Google user has already claimed a username or if a username is available
+app.get('/api/auth/google/status', async (req, res) => {
+  const googleUid = req.query.googleUid ? String(req.query.googleUid) : '';
+  if (!googleUid) {
+    return res.status(400).json({ error: 'googleUid parameter required' });
+  }
+  const claimedRecord = await getGoogleUserClaimedUsername(googleUid);
+  return res.json({
+    claimed: Boolean(claimedRecord),
+    record: claimedRecord || null
   });
+});
 
-  res.setHeader('Set-Cookie', setCookie);
-  return res.json({ success: true, user });
+// Google Auth sign-in and optional username claim
+app.post('/api/auth/google', async (req, res) => {
+  const { googleUid, email, displayName, photoURL, claimedUsername } = req.body;
+
+  if (!googleUid) {
+    return res.status(400).json({ error: 'googleUid is required' });
+  }
+
+  try {
+    let existingClaim = await getGoogleUserClaimedUsername(googleUid);
+    let usernameToUse = existingClaim ? existingClaim.username : null;
+
+    if (claimedUsername && claimedUsername.trim()) {
+      const cleanReq = claimedUsername.trim();
+      if (cleanReq.length < 2 || cleanReq.length > 30) {
+        return res.status(400).json({ error: 'Username must be between 2 and 30 characters.' });
+      }
+      const record = await claimUsernameForGoogle(cleanReq, {
+        googleUid,
+        email,
+        displayName,
+        photoURL
+      });
+      usernameToUse = record.username;
+    } else if (!existingClaim) {
+      // Auto-assign from displayName/email if not claimed yet
+      const candidate = (displayName || email.split('@')[0] || 'Agent').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20) || 'User';
+      // Try candidate, else append random
+      let chosenName = candidate;
+      const isTaken = await isUsernameClaimed(chosenName);
+      if (isTaken && isTaken.googleUid !== googleUid) {
+        chosenName = `${candidate}_${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+      const record = await claimUsernameForGoogle(chosenName, {
+        googleUid,
+        email,
+        displayName,
+        photoURL
+      });
+      usernameToUse = record.username;
+    }
+
+    const user = {
+      id: 'google_' + googleUid,
+      username: usernameToUse,
+      email: email || '',
+      avatar: photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(usernameToUse)}`,
+      isGoogleVerified: true,
+      googleUid
+    };
+
+    // Google accounts are permanent: 365 days session
+    const token = jwt.sign(user, JWT_SECRET, { expiresIn: '365d' });
+    const setCookie = stringifyCookie('vault_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
+      maxAge: 365 * 24 * 60 * 60,
+      path: '/'
+    });
+
+    res.setHeader('Set-Cookie', setCookie);
+    return res.json({ success: true, user });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -144,10 +237,13 @@ app.post('/api/upload', async (req, res) => {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
+    const isGoogleSender = Boolean(user && user.isGoogleVerified);
+
     const record = {
       token,
       userId: user ? user.id : 'user_' + username.toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
       senderUsername: username,
+      isGoogleSender,
       filename,
       mimeType,
       filesize: buffer.length,
@@ -176,6 +272,7 @@ app.post('/api/upload', async (req, res) => {
       success: true,
       token,
       senderUsername: username,
+      isGoogleSender,
       filename,
       viewDuration: record.viewDuration,
       allowScreenshots: record.allowScreenshots,
@@ -223,6 +320,7 @@ app.get('/api/view/:token/status', async (req, res) => {
   return res.json({
     status: 'ready',
     senderUsername: record.senderUsername || 'Confidential',
+    isGoogleSender: Boolean(record.isGoogleSender),
     filename: record.filename,
     filesize: record.filesize,
     viewDuration: record.viewDuration,
@@ -286,6 +384,7 @@ app.post('/api/view/:token/unlock', async (req, res) => {
     data: dataUri,
     filename: record.filename,
     senderUsername: record.senderUsername || 'Confidential',
+    isGoogleSender: Boolean(record.isGoogleSender),
     mimeType: record.mimeType,
     viewDuration: record.viewDuration,
     allowScreenshots: Boolean(record.allowScreenshots),

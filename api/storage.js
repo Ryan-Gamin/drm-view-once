@@ -90,6 +90,7 @@ async function listUserImages(userId) {
         spotlightMode: item.spotlightMode,
         spotlightIntensity: item.spotlightIntensity || 'full',
         watermarkEnabled: item.watermarkEnabled,
+        isGoogleSender: Boolean(item.isGoogleSender),
         isViewed: item.isViewed || item.is_viewed,
         viewedAt: item.viewedAt,
         viewerIp: item.viewerIp,
@@ -141,11 +142,135 @@ async function deleteImageRecord(token, userId) {
   return true;
 }
 
+// --- USER ACCOUNT & USERNAME CLAIM SYSTEM ---
+function getClaimedUsernamesMap() {
+  if (!localStore.has('__claimed_usernames__')) {
+    localStore.set('__claimed_usernames__', {});
+  }
+  return localStore.get('__claimed_usernames__');
+}
+
+function getEphemeralAccountsMap() {
+  if (!localStore.has('__ephemeral_accounts__')) {
+    localStore.set('__ephemeral_accounts__', {});
+  }
+  return localStore.get('__ephemeral_accounts__');
+}
+
+async function cleanupExpiredAccounts() {
+  const now = Date.now();
+  const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+  const ephemerals = getEphemeralAccountsMap();
+  const expiredUserIds = [];
+
+  for (const [key, account] of Object.entries(ephemerals)) {
+    if (account && account.createdAt && (now - account.createdAt > TWELVE_HOURS)) {
+      expiredUserIds.push('user_' + key);
+      delete ephemerals[key];
+    }
+  }
+
+  // Shred images from expired ephemeral accounts older than 12 hours
+  if (expiredUserIds.length > 0) {
+    for (const [key, item] of localStore.entries()) {
+      if (item && item.userId && expiredUserIds.includes(item.userId)) {
+        if (!item.isGoogleSender) {
+          localStore.delete(key);
+        }
+      }
+    }
+  }
+
+  persistLocalStore();
+}
+
+async function getGoogleUserClaimedUsername(googleUid) {
+  const claimed = getClaimedUsernamesMap();
+  for (const [uname, record] of Object.entries(claimed)) {
+    if (record && record.googleUid === googleUid) {
+      return record;
+    }
+  }
+  return null;
+}
+
+async function isUsernameClaimed(rawUsername) {
+  const clean = String(rawUsername).trim().toLowerCase();
+  const claimed = getClaimedUsernamesMap();
+  return claimed[clean] || null;
+}
+
+async function claimUsernameForGoogle(rawUsername, googleData) {
+  await cleanupExpiredAccounts();
+  const clean = String(rawUsername).trim().toLowerCase();
+  const claimed = getClaimedUsernamesMap();
+
+  if (claimed[clean] && claimed[clean].googleUid !== googleData.googleUid) {
+    throw new Error(`Username @${rawUsername} is already permanently claimed by another Google account.`);
+  }
+
+  // Remove any previously claimed username by this Google UID if changing
+  for (const [u, rec] of Object.entries(claimed)) {
+    if (rec && rec.googleUid === googleData.googleUid && u !== clean) {
+      delete claimed[u];
+    }
+  }
+
+  const record = {
+    username: rawUsername.trim(),
+    cleanUsername: clean,
+    googleUid: googleData.googleUid,
+    email: googleData.email,
+    displayName: googleData.displayName || rawUsername,
+    photoURL: googleData.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(rawUsername)}`,
+    claimedAt: new Date().toISOString(),
+    isGoogleVerified: true
+  };
+
+  claimed[clean] = record;
+
+  // Remove from ephemeral accounts if present
+  const ephemerals = getEphemeralAccountsMap();
+  delete ephemerals[clean];
+
+  persistLocalStore();
+  return record;
+}
+
+async function registerEphemeralUsername(rawUsername) {
+  await cleanupExpiredAccounts();
+  const clean = String(rawUsername).trim().toLowerCase();
+  const claimed = getClaimedUsernamesMap();
+
+  if (claimed[clean]) {
+    throw new Error(`Username @${rawUsername} is permanently claimed by a verified Google account. Sign in with Google to use it.`);
+  }
+
+  const ephemerals = getEphemeralAccountsMap();
+  const now = Date.now();
+  const account = {
+    username: rawUsername.trim(),
+    cleanUsername: clean,
+    createdAt: now,
+    expiresAt: now + (12 * 60 * 60 * 1000), // 12 hours lifespan
+    isGoogleVerified: false
+  };
+
+  ephemerals[clean] = account;
+  persistLocalStore();
+  return account;
+}
+
 module.exports = {
   saveImageRecord,
   getImageRecord,
   burnImageRecord,
   listUserImages,
   deleteImageRecord,
-  updateImageRecord
+  updateImageRecord,
+  getGoogleUserClaimedUsername,
+  claimUsernameForGoogle,
+  registerEphemeralUsername,
+  isUsernameClaimed,
+  cleanupExpiredAccounts
 };

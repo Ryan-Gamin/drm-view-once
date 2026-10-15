@@ -118,7 +118,114 @@ async function runTests() {
   assert.strictEqual(editBurnedRes.status, 400, 'Cannot edit an already viewed/burned link');
   console.log('✓ Correctly rejects attempt to edit an already burned link.');
 
-  console.log('\n🎉 ALL TESTS PASSED! Custom X seconds, Edit/Extend links, watermark defaults, and Google redirect 100% verified.');
+  // 9. Google Sign-in & Username Claim System
+  console.log('\n--- Testing Google Sign-in, Username Claim, & Option 4 Watermark Grid ---');
+  const googleLoginRes = await fetch(`${BASE_URL}/api/auth/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      googleUid: 'goog_test_uid_9988',
+      email: 'testagent@gmail.com',
+      displayName: 'Elite Agent',
+      photoURL: 'https://lh3.googleusercontent.com/test-photo',
+      claimedUsername: 'EliteVip'
+    })
+  });
+  assert.strictEqual(googleLoginRes.status, 200);
+  const googleLoginData = await googleLoginRes.json();
+  assert.strictEqual(googleLoginData.user.username, 'EliteVip');
+  assert.strictEqual(googleLoginData.user.isGoogleVerified, true);
+  const googleCookie = googleLoginRes.headers.get('set-cookie');
+  console.log('✓ Google account sign-in & username claim succeeded for @' + googleLoginData.user.username);
+
+  // 10. Verify Ephemeral user cannot take claimed Google username
+  const claimConflictRes = await fetch(`${BASE_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'EliteVip' })
+  });
+  assert.strictEqual(claimConflictRes.status, 400);
+  const claimConflictData = await claimConflictRes.json();
+  assert.ok(claimConflictData.error.includes('permanently claimed by a verified Google account'));
+  console.log('✓ Verified: Ephemeral users are prevented from taking claimed Google usernames.');
+
+  // 11. Verify Ephemeral user can login with unclaimed username and receives 12-hour session
+  const ephemeralRes = await fetch(`${BASE_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'TempUser12h' })
+  });
+  assert.strictEqual(ephemeralRes.status, 200);
+  const ephemeralData = await ephemeralRes.json();
+  assert.strictEqual(ephemeralData.user.username, 'TempUser12h');
+  assert.strictEqual(ephemeralData.user.isGoogleVerified, false);
+  assert.ok(ephemeralData.user.expiresAt, 'Ephemeral user has 12h expiresAt timestamp');
+  const ephemeralCookie = ephemeralRes.headers.get('set-cookie');
+  console.log('✓ Verified: Ephemeral account created with 12-hour TTL.');
+
+  // 12. Upload image as Google user -> Verify isGoogleSender is true
+  const googleUploadRes = await fetch(`${BASE_URL}/api/upload`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cookie': googleCookie
+    },
+    body: JSON.stringify({
+      username: 'EliteVip',
+      fileData: TINY_PNG_BASE64,
+      filename: 'google_forensic_test.png',
+      mimeType: 'image/png',
+      viewDuration: 15,
+      allowScreenshots: false
+    })
+  });
+  assert.strictEqual(googleUploadRes.status, 200);
+  const googleUploadData = await googleUploadRes.json();
+  assert.strictEqual(googleUploadData.isGoogleSender, true, 'isGoogleSender should be true for Google users');
+  const googleToken = googleUploadData.token;
+
+  // Check view status for Google sender
+  const googleStatusRes = await fetch(`${BASE_URL}/api/view/${googleToken}/status`);
+  assert.strictEqual(googleStatusRes.status, 200);
+  const googleStatusData = await googleStatusRes.json();
+  assert.strictEqual(googleStatusData.isGoogleSender, true, 'Public status reports isGoogleSender: true');
+
+  // Check view unlock for Google sender
+  const googleUnlockRes = await fetch(`${BASE_URL}/api/view/${googleToken}/unlock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  assert.strictEqual(googleUnlockRes.status, 200);
+  const googleUnlockData = await googleUnlockRes.json();
+  assert.strictEqual(googleUnlockData.isGoogleSender, true, 'Unlocked payload reports isGoogleSender: true for Option 4 matrix');
+  console.log('✓ Verified: Option 4 Forensic Matrix grid is tagged and active exclusively for Google sender images.');
+
+  // 13. Upload image as Ephemeral user -> Verify isGoogleSender is false
+  const ephemUploadRes = await fetch(`${BASE_URL}/api/upload`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cookie': ephemeralCookie
+    },
+    body: JSON.stringify({
+      username: 'TempUser12h',
+      fileData: TINY_PNG_BASE64,
+      filename: 'ephem_test.png',
+      mimeType: 'image/png',
+      viewDuration: 15
+    })
+  });
+  assert.strictEqual(ephemUploadRes.status, 200);
+  const ephemUploadData = await ephemUploadRes.json();
+  assert.strictEqual(ephemUploadData.isGoogleSender, false);
+  const ephemToken = ephemUploadData.token;
+
+  const ephemStatusRes = await fetch(`${BASE_URL}/api/view/${ephemToken}/status`);
+  const ephemStatusData = await ephemStatusRes.json();
+  assert.strictEqual(ephemStatusData.isGoogleSender, false);
+  console.log('✓ Verified: Ephemeral images correctly tagged with isGoogleSender: false.');
+
+  console.log('\n🎉 ALL TESTS PASSED! Google Auth, Username Claiming, 12h Ephemeral Accounts, and Option 4 Forensic Matrix verified.');
 }
 
 runTests().catch(err => {

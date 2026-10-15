@@ -36,6 +36,8 @@
   const sessionDurationInfo = document.getElementById('sessionDurationInfo');
   const screenshotStatusInfo = document.getElementById('screenshotStatusInfo');
   const senderUsernameDisplay = document.getElementById('senderUsernameDisplay');
+  const googleVerifiedSenderNotice = document.getElementById('googleVerifiedSenderNotice');
+  const viewingGoogleBadge = document.getElementById('viewingGoogleBadge');
   const headerStatusText = document.getElementById('headerStatusText');
   const headerDot = document.getElementById('headerDot');
   const canvas = document.getElementById('drmCanvas');
@@ -55,6 +57,7 @@
   let isHovering = false;
   let watermarkPos = { x: 50, y: 100, dx: 1.2, dy: 0.9 };
   let isBurned = false;
+  let renderFrameCount = 0;
 
   document.addEventListener('DOMContentLoaded', async () => {
     setupHoverTracking();
@@ -105,6 +108,10 @@
 
     if (meta.senderUsername && senderUsernameDisplay) {
       senderUsernameDisplay.innerText = `@${meta.senderUsername}`;
+    }
+
+    if (meta.isGoogleSender && googleVerifiedSenderNotice) {
+      googleVerifiedSenderNotice.style.display = 'inline-flex';
     }
 
     screenshotsAllowed = Boolean(meta.allowScreenshots);
@@ -171,6 +178,10 @@
 
     headerStatusText.innerText = screenshotsAllowed ? 'Screenshots Enabled' : 'DRM Armed';
     headerDot.style.background = '#00ff88';
+
+    if (payload.isGoogleSender && viewingGoogleBadge) {
+      viewingGoogleBadge.style.display = 'inline-flex';
+    }
 
     // Canvas sizing
     canvas.width = activeImage.naturalWidth;
@@ -280,7 +291,25 @@
         ctx.drawImage(activeImage, 0, 0, canvas.width, canvas.height);
       }
 
-      if (imageMetadata.watermarkEnabled !== false) {
+      // OPTION 1: PERSISTENCE-OF-VISION (POV) 60Hz SHUTTER
+      // Blocks instant PrintScreen. Human eyes fuse alternating raster scanlines at 60 FPS,
+      // but any single hardware PrintScreen or screen capture only grabs 50% corrupt striped bars.
+      if (!screenshotsAllowed) {
+        renderFrameCount++;
+        ctx.save();
+        ctx.fillStyle = '#080a0f';
+        const stripe = Math.max(2, Math.floor(canvas.height / 350));
+        const offset = (renderFrameCount % 2) * stripe;
+        for (let y = offset; y < canvas.height; y += stripe * 2) {
+          ctx.fillRect(0, y, canvas.width, stripe);
+        }
+        ctx.restore();
+      }
+
+      // OPTION 4: FORENSIC WATERMARK MATRIX GRID (Only for users signed in with Google)
+      if (imageMetadata && imageMetadata.isGoogleSender) {
+        drawGoogleForensicMatrix();
+      } else if (imageMetadata && imageMetadata.watermarkEnabled !== false) {
         drawForensicWatermark();
       }
     } else {
@@ -289,6 +318,33 @@
     }
 
     animationFrameId = requestAnimationFrame(renderLoop);
+  }
+
+  // Option 4: Diagonal repeating forensic watermark matrix grid across the entire canvas
+  function drawGoogleForensicMatrix() {
+    ctx.save();
+    const ip = imageMetadata.viewerIp || '127.0.0.1';
+    const sender = imageMetadata.senderUsername || 'Verified';
+    const nowUtc = imageMetadata.timestamp || (new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC');
+    const tokenTrace = token ? token.substring(0, 8) : 'DRM';
+
+    const text = `GOOGLE VERIFIED SENDER: @${sender} • VIEWER IP: ${ip} • ${nowUtc} • ID: ${tokenTrace}`;
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.17)';
+    const fontSize = Math.max(12, Math.min(18, Math.floor(canvas.width * 0.016)));
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.rotate(-0.35); // -20 degree diagonal angle
+
+    const stepX = Math.max(400, canvas.width * 0.45);
+    const stepY = Math.max(70, canvas.height * 0.1);
+    const diag = Math.sqrt(canvas.width * canvas.width + canvas.height * canvas.height);
+
+    for (let y = -diag; y < diag * 1.5; y += stepY) {
+      for (let x = -diag; x < diag * 1.5; x += stepX) {
+        ctx.fillText(text, x, y);
+      }
+    }
+    ctx.restore();
   }
 
   function drawForensicWatermark() {
@@ -376,6 +432,34 @@
     if (screenshotsAllowed) return;
     securityShieldsConfigured = true;
 
+    // OPTION 3: SILENT ZERO-PROMPT CLIPBOARD POISONING
+    // Overwriting clipboard requires ZERO browser permission prompts (only reading asks).
+    // Silently wipes any screen capture bitmap or copied data with DRM warning text.
+    const poisonClipboard = () => {
+      const warningText = '⚠️ DRM PROTECTED: Confidential View-Once content. Screenshots, PrintScreen, and clipboard copying are strictly prohibited on OneView.';
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(warningText).catch(() => {});
+        }
+      } catch (err) {}
+
+      // Invisible fallback textarea for 100% silent execCommand copying
+      try {
+        const area = document.createElement('textarea');
+        area.value = warningText;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.left = '-9999px';
+        area.style.top = '-9999px';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.focus();
+        area.select();
+        document.execCommand('copy');
+        document.body.removeChild(area);
+      } catch (err) {}
+    };
+
     const triggerShield = () => {
       if (screenshotsAllowed || isBurned) return;
       isWindowFocused = false;
@@ -386,9 +470,7 @@
         ctx.fillStyle = '#06080d';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
-      try {
-        navigator.clipboard?.writeText('DRM PROTECTED: Screenshots are disabled on OneView.');
-      } catch (err) {}
+      poisonClipboard();
     };
 
     const dismissShield = () => {
@@ -399,11 +481,12 @@
       headerDot.style.background = '#00ff88';
     };
 
-    // 1. LITERALLY ANY DETECTED KEY PRESS ACTIVATES SCREENSHOT PROTECTION
+    // 1. LITERALLY ANY DETECTED KEY PRESS (PrintScreen, Win+Shift+S, F12, etc.) ACTIVATES SHIELD & POISONS CLIPBOARD
     window.addEventListener('keydown', (e) => {
       if (!screenshotsAllowed) {
         e.preventDefault();
         e.stopPropagation();
+        poisonClipboard();
         triggerShield();
         return false;
       }
@@ -413,6 +496,7 @@
       if (!screenshotsAllowed) {
         e.preventDefault();
         e.stopPropagation();
+        poisonClipboard();
         triggerShield();
         return false;
       }
@@ -421,6 +505,7 @@
     // 2. WHEN PAGE IS FOCUSED (e.g. from background tab, external app, or snipping tool)
     window.addEventListener('focus', () => {
       if (!screenshotsAllowed) {
+        poisonClipboard();
         triggerShield();
       }
     });
@@ -450,6 +535,7 @@
     ['contextmenu', 'dragstart', 'selectstart', 'copy', 'cut'].forEach(evt => {
       window.addEventListener(evt, (e) => {
         e.preventDefault();
+        poisonClipboard();
         return false;
       }, true);
     });

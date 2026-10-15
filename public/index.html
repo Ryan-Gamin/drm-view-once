@@ -6,6 +6,27 @@
   <title>OneView | Secure View-Once Image Sharing</title>
   <link rel="stylesheet" href="/css/style.css">
   <script src="/js/qrcode.min.js"></script>
+  <!-- Firebase Auth SDK for Permanent Google Accounts & Option 4 Forensic Matrix -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAvYqXnbcmMsc7n5-lHsWGSU0k4QeeVex4",
+      authDomain: "oneview-drm.firebaseapp.com",
+      projectId: "oneview-drm",
+      storageBucket: "oneview-drm.firebasestorage.app",
+      messagingSenderId: "811043960528",
+      appId: "1:811043960528:web:12634164477bfde6cc50d5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+
+    window.firebaseAuth = { auth, provider, signInWithPopup, signOut, onAuthStateChanged };
+    window.dispatchEvent(new CustomEvent('firebase-ready'));
+  </script>
 </head>
 <body class="bg-grid">
 
@@ -37,17 +58,34 @@
     <!-- Main Content Area -->
     <main>
       <!-- STEP 1: Enter Username (If not set) -->
-      <section id="usernamePromptSection" class="card" style="text-align: center; padding: 3rem 2rem; max-width: 520px; margin: 2rem auto; display: none;">
-        <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(0, 242, 254, 0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; color: var(--accent-cyan);">
+      <section id="usernamePromptSection" class="card" style="text-align: center; padding: 2.5rem 2rem; max-width: 520px; margin: 2rem auto; display: none;">
+        <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(0, 242, 254, 0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; color: var(--accent-cyan);">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
             <circle cx="12" cy="7" r="4"></circle>
           </svg>
         </div>
-        <h2 style="font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">Choose a Username</h2>
-        <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.75rem;">
-          No password or email required. Just pick a username to start sharing confidential view-once images.
+        <h2 style="font-size: 1.6rem; font-weight: 700; margin-bottom: 0.4rem;">Choose Account Type</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+          Sign in with Google to permanently claim a username & unlock Option 4 Forensic Matrix protection, or continue with a 12-hour ephemeral handle.
         </p>
+
+        <!-- Google Sign-In Button -->
+        <button id="googleSignInBtn" type="button" class="btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.75rem; background: #ffffff; color: #1f1f1f; font-weight: 600; font-size: 0.95rem; padding: 0.8rem 1rem; border-radius: 8px; border: 1px solid #dadce0; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: background 0.2s, transform 0.1s; cursor: pointer;">
+          <svg width="20" height="20" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Sign in with Google (Permanent + Claim Username)</span>
+        </button>
+
+        <div style="display: flex; align-items: center; margin: 1.5rem 0; color: var(--text-muted); font-size: 0.8rem;">
+          <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
+          <span style="padding: 0 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem;">or choose ephemeral username</span>
+          <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
+        </div>
 
         <form id="usernameForm" style="display: flex; flex-direction: column; gap: 1rem;">
           <div style="position: relative; width: 100%;">
@@ -56,8 +94,11 @@
               <strong style="font-weight: 800; color: #ffffff; margin-right: 0.35rem;">Never</strong><span>use your real name</span>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="padding: 0.85rem; font-size: 1rem;">
-            <span>Start Sending Images</span>
+          <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; justify-content: center; gap: 0.35rem;">
+            <span>⏱️ Ephemeral accounts auto-expire and delete after 12 hours.</span>
+          </div>
+          <button type="submit" class="btn btn-secondary" style="padding: 0.85rem; font-size: 0.95rem;">
+            <span>Start 12-Hour Ephemeral Session</span>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
           </button>
         </form>
@@ -380,6 +421,43 @@
         <button id="saveEditBtn" class="btn btn-primary" style="flex: 1; padding: 0.75rem;">Save & Update Link</button>
         <button id="cancelEditBtn" class="btn btn-secondary" style="padding: 0.75rem 1rem;">Cancel</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Claim / Customize Username Modal (For Google Accounts) -->
+  <div id="claimModal" class="modal-backdrop">
+    <div class="modal" style="max-width: 460px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+        <h3 style="font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="#4285F4"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+          <span>Claim Unique Username</span>
+        </h3>
+        <button id="closeClaimModalBtn" class="btn-icon" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem;">✕</button>
+      </div>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+        As a verified Google user, your account never expires and you can permanently claim a unique username handle. Once claimed, no other account or ephemeral user can ever take it.
+      </p>
+
+      <form id="claimUsernameForm" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label" for="claimedUsernameInput">Your Permanent Username</label>
+          <div style="position: relative;">
+            <span style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--accent-cyan); font-weight: 700;">@</span>
+            <input type="text" id="claimedUsernameInput" class="form-input" style="padding-left: 2.2rem;" required maxlength="30" placeholder="YourHandle">
+          </div>
+          <p id="claimErrorText" style="color: var(--accent-red); font-size: 0.8rem; margin-top: 0.4rem; display: none;"></p>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
+          <button type="submit" id="submitClaimBtn" class="btn btn-primary" style="flex: 1; padding: 0.75rem;">
+            Claim & Lock Username
+          </button>
+          <button type="button" id="cancelClaimBtn" class="btn btn-secondary" style="padding: 0.75rem 1rem;">
+            Cancel
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
