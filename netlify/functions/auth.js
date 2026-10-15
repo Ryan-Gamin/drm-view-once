@@ -1,10 +1,19 @@
 const jwt = require('jsonwebtoken');
-const { stringifySetCookie } = require('cookie');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'drm-vault-jwt-session-secret-key-9988';
 
+function stringifyCookie(name, value, options = {}) {
+  let str = `${name}=${value}`;
+  if (options.maxAge != null) str += `; Max-Age=${options.maxAge}`;
+  if (options.path) str += `; Path=${options.path}`;
+  if (options.httpOnly) str += '; HttpOnly';
+  if (options.secure) str += '; Secure';
+  if (options.sameSite) str += `; SameSite=${options.sameSite}`;
+  return str;
+}
+
 function parseUser(event) {
-  const cookieHeader = event.headers.cookie || event.headers.Cookie || '';
+  const cookieHeader = (event.headers && (event.headers.cookie || event.headers.Cookie)) || '';
   const cookies = {};
   cookieHeader.split(';').forEach(c => {
     const [k, ...v] = c.trim().split('=');
@@ -22,12 +31,10 @@ function parseUser(event) {
 
 function makeCookieHeader(userData) {
   const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '30d' });
-  return stringifySetCookie({
-    name: 'vault_session',
-    value: token,
+  return stringifyCookie('vault_session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'Lax',
     maxAge: 30 * 24 * 60 * 60,
     path: '/'
   });
@@ -65,7 +72,7 @@ exports.handler = async (event) => {
     };
   }
 
-  // POST /api/auth/login (Login with any Username)
+  // POST /api/auth/login
   if (method === 'POST' && (path.endsWith('/login') || path.endsWith('/username'))) {
     try {
       const body = JSON.parse(event.body || '{}');
@@ -109,9 +116,7 @@ exports.handler = async (event) => {
 
   // POST /api/auth/logout
   if (method === 'POST' && path.endsWith('/logout')) {
-    const clearCookie = stringifySetCookie({
-      name: 'vault_session',
-      value: '',
+    const clearCookie = stringifyCookie('vault_session', '', {
       httpOnly: true,
       maxAge: 0,
       path: '/'

@@ -1,12 +1,13 @@
 {
   "name": "drm-view-once",
   "version": "1.0.0",
-  "description": "Secure, view-once confidential image sharing with client-side DRM canvas rendering, anti-screenshot shields, dynamic forensic watermarking, and instant server-side shredding.",
+  "description": "Secure, view-once confidential image sharing with client-side DRM canvas rendering, anti-screenshot shields, dynamic forensic watermarking, instant server-side shredding, and auto-redirect to Google.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "echo 'Static assets ready in public/'"
+    "test": "node server.js & SERVER_PID=$! && sleep 1 && node test_e2e.js && kill $SERVER_PID",
+    "build": "echo 'Build complete'"
   },
   "keywords": [
     "drm",
@@ -15,15 +16,12 @@
     "ephemeral",
     "secure-sharing",
     "burn-on-read",
-    "google-auth",
     "netlify"
   ],
   "author": "Ryan-Gamin",
   "license": "MIT",
   "dependencies": {
     "@netlify/blobs": "^11.1.4",
-    "cookie": "^2.0.1",
-    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "express": "^5.3.0",
     "jsonwebtoken": "^9.0.3"
