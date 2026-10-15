@@ -10,3 +10,9 @@ dist/
 /tmp/drm_vault_store.json
 vault.db
 .vercel
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example

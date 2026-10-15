@@ -34,7 +34,8 @@ async function runTests() {
       viewDuration: 7, // Custom 7s
       allowScreenshots: false,
       allowDownload: false,
-      spotlightMode: false,
+      spotlightMode: true,
+      spotlightIntensity: 'large',
       watermarkEnabled: false // Watermark OFF by default
     })
   });
@@ -42,19 +43,22 @@ async function runTests() {
   const uploadData = await uploadRes.json();
   assert.strictEqual(uploadData.viewDuration, 7, 'Duration should be custom 7s');
   assert.strictEqual(uploadData.allowScreenshots, false, 'Screenshots should be blocked');
+  assert.strictEqual(uploadData.spotlightMode, true);
+  assert.strictEqual(uploadData.spotlightIntensity, 'large');
   assert.strictEqual(uploadData.watermarkEnabled, false, 'Watermark should be OFF by default');
   const token = uploadData.token;
-  console.log('✓ Upload generated link with custom 7s duration and watermark OFF by default');
+  console.log('✓ Upload generated link with custom 7s duration, spotlightIntensity large, and watermark OFF by default');
 
   // 3. Status Check (pre-edit)
   const statusRes = await fetch(`${BASE_URL}/api/view/${token}/status`);
   assert.strictEqual(statusRes.status, 200);
   const statusData = await statusRes.json();
   assert.strictEqual(statusData.viewDuration, 7);
+  assert.strictEqual(statusData.spotlightIntensity, 'large');
   assert.strictEqual(statusData.watermarkEnabled, false);
-  console.log('✓ Status endpoint verified initial duration: 7s');
+  console.log('✓ Status endpoint verified initial duration: 7s and spotlightIntensity: large');
 
-  // 4. Edit / Extend the Link (Extend to 45s, Enable Download)
+  // 4. Edit / Extend the Link (Extend to 45s, Enable Download, Change intensity to full)
   const editRes = await fetch(`${BASE_URL}/api/images/${token}`, {
     method: 'PATCH',
     headers: {
@@ -63,7 +67,8 @@ async function runTests() {
     },
     body: JSON.stringify({
       viewDuration: 45, // Extended from 7s to 45s
-      allowDownload: true
+      allowDownload: true,
+      spotlightIntensity: 'full'
     })
   });
   assert.strictEqual(editRes.status, 200);
@@ -71,7 +76,8 @@ async function runTests() {
   assert.strictEqual(editData.success, true);
   assert.strictEqual(editData.record.viewDuration, 45, 'Duration extended to 45s');
   assert.strictEqual(editData.record.allowDownload, true, 'Download enabled via edit');
-  console.log('✓ Edit/Extend endpoint successfully extended duration to 45s and updated permissions');
+  assert.strictEqual(editData.record.spotlightIntensity, 'full', 'Intensity updated to full');
+  console.log('✓ Edit/Extend endpoint successfully extended duration to 45s and updated intensity to full');
 
   // 5. Verify Updated Status
   const statusRes2 = await fetch(`${BASE_URL}/api/view/${token}/status`);

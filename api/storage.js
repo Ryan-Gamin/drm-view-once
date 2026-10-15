@@ -88,6 +88,7 @@ async function listUserImages(userId) {
         allowScreenshots: item.allowScreenshots,
         allowDownload: item.allowDownload,
         spotlightMode: item.spotlightMode,
+        spotlightIntensity: item.spotlightIntensity || 'small',
         watermarkEnabled: item.watermarkEnabled,
         isViewed: item.isViewed || item.is_viewed,
         viewedAt: item.viewedAt,
@@ -122,6 +123,9 @@ async function updateImageRecord(token, updates, userId) {
   }
   if (updates.spotlightMode !== undefined) {
     record.spotlightMode = Boolean(updates.spotlightMode);
+  }
+  if (updates.spotlightIntensity !== undefined) {
+    record.spotlightIntensity = ['small', 'large', 'full'].includes(updates.spotlightIntensity) ? updates.spotlightIntensity : 'small';
   }
 
   localStore.set(token, record);

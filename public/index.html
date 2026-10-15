@@ -145,10 +145,10 @@
               <label class="form-label">Screenshot Protection</label>
               <label class="switch-label" style="margin-bottom: 0;">
                 <div>
-                  <p style="font-weight: 600; font-size: 0.85rem;" id="screenshotPermText">Disallow Screenshots (Strict Shield)</p>
-                  <p style="font-size: 0.75rem; color: var(--text-muted);">Blacks out screen on blur, blocks Snipping tool & PrintScreen</p>
+                  <p style="font-weight: 600; font-size: 0.85rem;" id="screenshotPermText">Screenshots are disabled</p>
+                  <p style="font-size: 0.75rem; color: var(--text-muted);" id="screenshotPermDesc">Strict defocus shield active: blocks Snipping Tool, Win+Shift+S, and PrintScreen</p>
                 </div>
-                <input type="checkbox" id="allowScreenshotsToggle" class="switch-input">
+                <input type="checkbox" id="allowScreenshotsToggle" class="switch-input" checked>
               </label>
             </div>
 
@@ -159,8 +159,8 @@
             
             <label class="switch-label">
               <div>
-                <p style="font-weight: 600; font-size: 0.9rem;" id="downloadPermText">Allow Native Download Button</p>
-                <p style="font-size: 0.8rem; color: var(--text-muted);">If enabled, a native "Download Image" button is provided to the viewer</p>
+                <p style="font-weight: 600; font-size: 0.9rem;" id="downloadPermText">Allow download button</p>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">Add an easy "Download Image" button to download the image with one click</p>
               </div>
               <input type="checkbox" id="allowDownloadToggle" class="switch-input">
             </label>
@@ -173,13 +173,32 @@
               <input type="checkbox" id="watermarkToggle" class="switch-input">
             </label>
 
-            <label class="switch-label">
+            <label class="switch-label" style="margin-bottom: 0.5rem;">
               <div>
-                <p style="font-weight: 600; font-size: 0.9rem;">Hold-to-Reveal (Spotlight Lens Mode)</p>
-                <p style="font-size: 0.8rem; color: var(--text-muted);">Image is obscured in darkness; viewer must hold down cursor/touch to reveal portions with a flashlight lens</p>
+                <p style="font-weight: 600; font-size: 0.9rem;">Hover to reveal</p>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">Image is obscured in darkness until hovered over by cursor or touch</p>
               </div>
               <input type="checkbox" id="spotlightToggle" class="switch-input">
             </label>
+
+            <!-- Hover to Reveal 3 Intensities -->
+            <div id="spotlightIntensityContainer" style="display: none; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem;">
+              <label class="form-label" style="font-size: 0.8rem; margin-bottom: 0.5rem; color: var(--accent-cyan);">Choose Hover Intensity:</label>
+              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; cursor: pointer;">
+                  <input type="radio" name="spotlightIntensity" value="small" checked>
+                  <span>Small area, like a flashlight in the dark</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; cursor: pointer;">
+                  <input type="radio" name="spotlightIntensity" value="large">
+                  <span>Large area, covering most of the image</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; cursor: pointer;">
+                  <input type="radio" name="spotlightIntensity" value="full">
+                  <span>Whole image, hover to reveal</span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <!-- Submit Button -->
@@ -303,16 +322,16 @@
       <div style="margin-bottom: 1.25rem;">
         <label class="switch-label">
           <div>
-            <p style="font-weight: 600; font-size: 0.85rem;">Allow Screenshots</p>
-            <p style="font-size: 0.75rem; color: var(--text-muted);">Toggle whether defocus shield and anti-snipping are armed</p>
+            <p style="font-weight: 600; font-size: 0.85rem;" id="editScreenshotPermText">Screenshots are disabled</p>
+            <p style="font-size: 0.75rem; color: var(--text-muted);" id="editScreenshotPermDesc">Strict defocus shield active: blocks Snipping Tool, Win+Shift+S, and PrintScreen</p>
           </div>
-          <input type="checkbox" id="editAllowScreenshotsToggle" class="switch-input">
+          <input type="checkbox" id="editAllowScreenshotsToggle" class="switch-input" checked>
         </label>
 
         <label class="switch-label">
           <div>
-            <p style="font-weight: 600; font-size: 0.85rem;">Allow Download Button</p>
-            <p style="font-size: 0.75rem; color: var(--text-muted);">Provide recipient a native download button</p>
+            <p style="font-weight: 600; font-size: 0.85rem;">Allow download button</p>
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Add an easy "Download Image" button to download the image with one click</p>
           </div>
           <input type="checkbox" id="editAllowDownloadToggle" class="switch-input">
         </label>
@@ -324,6 +343,32 @@
           </div>
           <input type="checkbox" id="editWatermarkToggle" class="switch-input">
         </label>
+
+        <label class="switch-label" style="margin-bottom: 0.5rem;">
+          <div>
+            <p style="font-weight: 600; font-size: 0.85rem;">Hover to reveal</p>
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Image is obscured in darkness until hovered over</p>
+          </div>
+          <input type="checkbox" id="editSpotlightToggle" class="switch-input">
+        </label>
+
+        <div id="editSpotlightIntensityContainer" style="display: none; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.65rem 0.85rem; margin-bottom: 0.75rem;">
+          <label class="form-label" style="font-size: 0.75rem; margin-bottom: 0.4rem; color: var(--accent-cyan);">Choose Hover Intensity:</label>
+          <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer;">
+              <input type="radio" name="editSpotlightIntensity" value="small" checked>
+              <span>Small area, like a flashlight in the dark</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer;">
+              <input type="radio" name="editSpotlightIntensity" value="large">
+              <span>Large area, covering most of the image</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer;">
+              <input type="radio" name="editSpotlightIntensity" value="full">
+              <span>Whole image, hover to reveal</span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <div style="display: flex; gap: 0.75rem;">

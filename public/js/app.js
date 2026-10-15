@@ -28,9 +28,11 @@ const customDurationInput = document.getElementById('customDurationInput');
 
 const allowScreenshotsToggle = document.getElementById('allowScreenshotsToggle');
 const screenshotPermText = document.getElementById('screenshotPermText');
+const screenshotPermDesc = document.getElementById('screenshotPermDesc');
 const allowDownloadToggle = document.getElementById('allowDownloadToggle');
 const watermarkToggle = document.getElementById('watermarkToggle');
 const spotlightToggle = document.getElementById('spotlightToggle');
+const spotlightIntensityContainer = document.getElementById('spotlightIntensityContainer');
 const uploadBtn = document.getElementById('uploadBtn');
 
 const linksTableBody = document.getElementById('linksTableBody');
@@ -51,8 +53,12 @@ const editDurationSelect = document.getElementById('editDurationSelect');
 const editCustomDurationBox = document.getElementById('editCustomDurationBox');
 const editCustomDurationInput = document.getElementById('editCustomDurationInput');
 const editAllowScreenshotsToggle = document.getElementById('editAllowScreenshotsToggle');
+const editScreenshotPermText = document.getElementById('editScreenshotPermText');
+const editScreenshotPermDesc = document.getElementById('editScreenshotPermDesc');
 const editAllowDownloadToggle = document.getElementById('editAllowDownloadToggle');
 const editWatermarkToggle = document.getElementById('editWatermarkToggle');
+const editSpotlightToggle = document.getElementById('editSpotlightToggle');
+const editSpotlightIntensityContainer = document.getElementById('editSpotlightIntensityContainer');
 const saveEditBtn = document.getElementById('saveEditBtn');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
 const closeEditModalBtn = document.getElementById('closeEditModalBtn');
@@ -155,8 +161,38 @@ function setupEventListeners() {
   allowScreenshotsToggle?.addEventListener('change', () => {
     if (screenshotPermText) {
       screenshotPermText.innerText = allowScreenshotsToggle.checked
-        ? 'Allow Screenshots (Shield Disabled)'
-        : 'Disallow Screenshots (Strict Shield)';
+        ? 'Screenshots are disabled'
+        : 'Screenshots are enabled';
+    }
+    if (screenshotPermDesc) {
+      screenshotPermDesc.innerText = allowScreenshotsToggle.checked
+        ? 'Strict defocus shield active: blocks Snipping Tool, Win+Shift+S, and PrintScreen'
+        : 'Shield disabled: viewers may take screenshots freely';
+    }
+  });
+
+  spotlightToggle?.addEventListener('change', () => {
+    if (spotlightIntensityContainer) {
+      spotlightIntensityContainer.style.display = spotlightToggle.checked ? 'block' : 'none';
+    }
+  });
+
+  editAllowScreenshotsToggle?.addEventListener('change', () => {
+    if (editScreenshotPermText) {
+      editScreenshotPermText.innerText = editAllowScreenshotsToggle.checked
+        ? 'Screenshots are disabled'
+        : 'Screenshots are enabled';
+    }
+    if (editScreenshotPermDesc) {
+      editScreenshotPermDesc.innerText = editAllowScreenshotsToggle.checked
+        ? 'Strict defocus shield active: blocks Snipping Tool, Win+Shift+S, and PrintScreen'
+        : 'Shield disabled: viewers may take screenshots freely';
+    }
+  });
+
+  editSpotlightToggle?.addEventListener('change', () => {
+    if (editSpotlightIntensityContainer) {
+      editSpotlightIntensityContainer.style.display = editSpotlightToggle.checked ? 'block' : 'none';
     }
   });
 
@@ -363,15 +399,17 @@ async function handleUpload() {
   `;
 
   try {
+    const intensity = document.querySelector('input[name="spotlightIntensity"]:checked')?.value || 'small';
     const payload = {
       username: currentUsername,
       fileData: selectedFileDataUri,
       filename: selectedFile.name,
       mimeType: selectedFile.type,
       viewDuration: finalDuration,
-      allowScreenshots: allowScreenshotsToggle.checked,
+      allowScreenshots: !allowScreenshotsToggle.checked,
       allowDownload: allowDownloadToggle.checked,
       spotlightMode: spotlightToggle.checked,
+      spotlightIntensity: intensity,
       watermarkEnabled: watermarkToggle.checked // Off by default
     };
 
@@ -461,7 +499,7 @@ async function loadUserLinks() {
 
       const createdDate = new Date(img.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       const durationText = formatDuration(img.viewDuration);
-      const screenshotsAllowed = img.allowScreenshots ? '<span style="color: var(--accent-green);">Allowed</span>' : '<span style="color: var(--accent-red);">Blocked</span>';
+      const screenshotsAllowed = !img.allowScreenshots ? '<span style="color: var(--accent-red);">Disabled</span>' : '<span style="color: var(--accent-green);">Enabled</span>';
       const downloadAllowed = img.allowDownload ? '<span style="color: var(--accent-green);">Yes</span>' : '<span style="color: var(--text-muted);">No</span>';
 
       const editBtn = isBurned 
@@ -514,9 +552,29 @@ window.editLink = (token) => {
     editCustomDurationBox.style.display = 'block';
   }
 
-  editAllowScreenshotsToggle.checked = Boolean(item.allowScreenshots);
+  // Toggle checked means disabled!
+  editAllowScreenshotsToggle.checked = !Boolean(item.allowScreenshots);
+  if (editScreenshotPermText) {
+    editScreenshotPermText.innerText = editAllowScreenshotsToggle.checked
+      ? 'Screenshots are disabled'
+      : 'Screenshots are enabled';
+  }
+  if (editScreenshotPermDesc) {
+    editScreenshotPermDesc.innerText = editAllowScreenshotsToggle.checked
+      ? 'Strict defocus shield active: blocks Snipping Tool, Win+Shift+S, and PrintScreen'
+      : 'Shield disabled: viewers may take screenshots freely';
+  }
+
   editAllowDownloadToggle.checked = Boolean(item.allowDownload);
   editWatermarkToggle.checked = Boolean(item.watermarkEnabled);
+
+  editSpotlightToggle.checked = Boolean(item.spotlightMode);
+  if (editSpotlightIntensityContainer) {
+    editSpotlightIntensityContainer.style.display = item.spotlightMode ? 'block' : 'none';
+  }
+  const currentIntensity = item.spotlightIntensity || 'small';
+  const intensityRadio = document.querySelector(`input[name="editSpotlightIntensity"][value="${currentIntensity}"]`);
+  if (intensityRadio) intensityRadio.checked = true;
 
   editModal.classList.add('active');
 };
@@ -541,13 +599,16 @@ async function handleSaveEdit() {
   saveEditBtn.innerText = 'Saving...';
 
   try {
+    const editIntensity = document.querySelector('input[name="editSpotlightIntensity"]:checked')?.value || 'small';
     const res = await fetch(`/api/images/${token}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         viewDuration: finalDuration,
-        allowScreenshots: editAllowScreenshotsToggle.checked,
+        allowScreenshots: !editAllowScreenshotsToggle.checked,
         allowDownload: editAllowDownloadToggle.checked,
+        spotlightMode: editSpotlightToggle.checked,
+        spotlightIntensity: editIntensity,
         watermarkEnabled: editWatermarkToggle.checked
       })
     });

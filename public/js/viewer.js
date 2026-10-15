@@ -51,7 +51,7 @@
   let screenshotsAllowed = false;
   let downloadAllowed = false;
   let mousePos = { x: -9999, y: -9999 };
-  let isMouseDown = false;
+  let isHovering = false;
   let watermarkPos = { x: 50, y: 100, dx: 1.2, dy: 0.9 };
   let isBurned = false;
 
@@ -110,8 +110,8 @@
 
     if (screenshotStatusInfo) {
       screenshotStatusInfo.innerHTML = screenshotsAllowed
-        ? `<strong>Screenshots:</strong> <span style="color: var(--accent-green);">Allowed by creator</span>`
-        : `<strong>Screenshots:</strong> <span style="color: var(--accent-red);">Blocked (Strict shield active)</span>`;
+        ? `<strong>Screenshots:</strong> <span style="color: var(--accent-green);">Enabled by sender</span>`
+        : `<strong>Screenshots:</strong> <span style="color: var(--accent-red);">Disabled (Strict shield active)</span>`;
     }
 
     const dur = meta.viewDuration;
@@ -164,7 +164,7 @@
     stateReady.style.display = 'none';
     stateViewing.style.display = 'block';
 
-    headerStatusText.innerText = screenshotsAllowed ? 'Screenshots Allowed' : 'DRM Armed';
+    headerStatusText.innerText = screenshotsAllowed ? 'Screenshots Enabled' : 'DRM Armed';
     headerDot.style.background = '#00ff88';
 
     // Canvas sizing
@@ -232,29 +232,42 @@
         ctx.fillStyle = '#080a0f';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        if (isMouseDown && mousePos.x >= 0) {
-          ctx.save();
-          ctx.beginPath();
-          const lensRadius = Math.max(80, canvas.width * 0.12);
-          ctx.arc(mousePos.x, mousePos.y, lensRadius, 0, Math.PI * 2);
-          ctx.clip();
+        const intensity = imageMetadata?.spotlightIntensity || 'small';
 
-          ctx.drawImage(activeImage, 0, 0, canvas.width, canvas.height);
-          ctx.restore();
+        if (isHovering && (intensity === 'full' || mousePos.x >= 0)) {
+          if (intensity === 'full') {
+            // Whole image, hover to reveal
+            ctx.drawImage(activeImage, 0, 0, canvas.width, canvas.height);
+          } else {
+            // Lens mode: small or large
+            const minDim = Math.min(canvas.width, canvas.height);
+            const lensRadius = intensity === 'large'
+              ? Math.max(280, minDim * 0.45)
+              : Math.max(90, minDim * 0.15);
 
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(mousePos.x, mousePos.y, lensRadius, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(0, 242, 254, 0.6)';
-          ctx.lineWidth = 3;
-          ctx.stroke();
-          ctx.restore();
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(mousePos.x, mousePos.y, lensRadius, 0, Math.PI * 2);
+            ctx.clip();
+            ctx.drawImage(activeImage, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(mousePos.x, mousePos.y, lensRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0, 242, 254, 0.6)';
+            ctx.lineWidth = intensity === 'large' ? 4 : 3;
+            ctx.stroke();
+            ctx.restore();
+          }
         } else {
           ctx.save();
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-          ctx.font = 'bold 22px sans-serif';
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+          const fontSize = Math.max(16, Math.min(26, Math.floor(canvas.width * 0.035)));
+          ctx.font = `bold ${fontSize}px sans-serif`;
           ctx.textAlign = 'center';
-          ctx.fillText('⚡ PRESS & HOLD TO REVEAL WITH SPOTLIGHT LENS', canvas.width / 2, canvas.height / 2);
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⚡ HOVER OVER IMAGE TO REVEAL', canvas.width / 2, canvas.height / 2);
           ctx.restore();
         }
       } else {
@@ -384,38 +397,43 @@
 
     const updateCoord = (clientX, clientY) => {
       const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
       mousePos.x = (clientX - rect.left) * scaleX;
       mousePos.y = (clientY - rect.top) * scaleY;
     };
 
-    canvas.addEventListener('mousedown', (e) => {
-      isMouseDown = true;
+    canvas.addEventListener('mouseenter', (e) => {
+      isHovering = true;
       updateCoord(e.clientX, e.clientY);
-    });
-
-    window.addEventListener('mouseup', () => {
-      isMouseDown = false;
     });
 
     canvas.addEventListener('mousemove', (e) => {
+      isHovering = true;
       updateCoord(e.clientX, e.clientY);
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      isHovering = false;
+      mousePos = { x: -9999, y: -9999 };
     });
 
     canvas.addEventListener('touchstart', (e) => {
       if (e.touches.length > 0) {
-        isMouseDown = true;
+        isHovering = true;
         updateCoord(e.touches[0].clientX, e.touches[0].clientY);
       }
     }, { passive: false });
 
-    window.addEventListener('touchend', () => {
-      isMouseDown = false;
+    canvas.addEventListener('touchend', () => {
+      isHovering = false;
+      mousePos = { x: -9999, y: -9999 };
     });
 
     canvas.addEventListener('touchmove', (e) => {
       if (e.touches.length > 0) {
+        isHovering = true;
         updateCoord(e.touches[0].clientX, e.touches[0].clientY);
       }
     }, { passive: false });

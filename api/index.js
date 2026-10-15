@@ -123,6 +123,7 @@ app.post('/api/upload', async (req, res) => {
       allowScreenshots = false,
       allowDownload = false,
       spotlightMode = false,
+      spotlightIntensity = 'small',
       watermarkEnabled = false
     } = req.body;
 
@@ -156,6 +157,7 @@ app.post('/api/upload', async (req, res) => {
       allowScreenshots: Boolean(allowScreenshots),
       allowDownload: Boolean(allowDownload),
       spotlightMode: Boolean(spotlightMode),
+      spotlightIntensity: ['small', 'large', 'full'].includes(spotlightIntensity) ? spotlightIntensity : 'small',
       watermarkEnabled: Boolean(watermarkEnabled),
       isViewed: false,
       viewedAt: null,
@@ -179,6 +181,7 @@ app.post('/api/upload', async (req, res) => {
       allowScreenshots: record.allowScreenshots,
       allowDownload: record.allowDownload,
       spotlightMode: record.spotlightMode,
+      spotlightIntensity: record.spotlightIntensity,
       watermarkEnabled: record.watermarkEnabled,
       createdAt: record.createdAt,
       expiresAt: record.expiresAt
@@ -226,6 +229,7 @@ app.get('/api/view/:token/status', async (req, res) => {
     allowScreenshots: Boolean(record.allowScreenshots),
     allowDownload: Boolean(record.allowDownload),
     spotlightMode: Boolean(record.spotlightMode),
+    spotlightIntensity: record.spotlightIntensity || 'small',
     watermarkEnabled: Boolean(record.watermarkEnabled)
   });
 });
@@ -287,6 +291,7 @@ app.post('/api/view/:token/unlock', async (req, res) => {
     allowScreenshots: Boolean(record.allowScreenshots),
     allowDownload: Boolean(record.allowDownload),
     spotlightMode: Boolean(record.spotlightMode),
+    spotlightIntensity: record.spotlightIntensity || 'small',
     watermarkEnabled: Boolean(record.watermarkEnabled),
     viewerIp,
     timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
@@ -341,7 +346,8 @@ app.patch('/api/images/:token', async (req, res) => {
         allowScreenshots: updated.allowScreenshots,
         allowDownload: updated.allowDownload,
         watermarkEnabled: updated.watermarkEnabled,
-        spotlightMode: updated.spotlightMode
+        spotlightMode: updated.spotlightMode,
+        spotlightIntensity: updated.spotlightIntensity || 'small'
       }
     });
   } catch (err) {
@@ -370,7 +376,8 @@ app.put('/api/images/:token', async (req, res) => {
         allowScreenshots: updated.allowScreenshots,
         allowDownload: updated.allowDownload,
         watermarkEnabled: updated.watermarkEnabled,
-        spotlightMode: updated.spotlightMode
+        spotlightMode: updated.spotlightMode,
+        spotlightIntensity: updated.spotlightIntensity || 'small'
       }
     });
   } catch (err) {
