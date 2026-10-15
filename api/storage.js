@@ -1,109 +1,255 @@
-const fs = require('fs');
-const path = require('path');
+// Persistent storage for OneView.
+//
+// Production: Cloud Firestore via the Firebase Admin SDK (shared across every
+// serverless instance and every deploy). Credentials come from the
+// FIREBASE_SERVICE_ACCOUNT env var (raw JSON or base64-encoded JSON).
+// Firestore security rules should deny all client access; the Admin SDK
+// bypasses rules, so only this server can read/write.
+//
+// Local dev / tests: if no credentials are set, an in-memory adapter with the
+// same interface is used.
+//
+// Collections:
+//   images/{token}                  image metadata (no ciphertext)
+//   images/{token}/chunks/{i}       ciphertext split into <=900KB chunks
+//   claimed_usernames/{clean}       permanent Google-claimed handles
+//   ephemeral_accounts/{clean}      12-hour username-only accounts
 
-const localStore = new Map();
-const LOCAL_PERSIST_FILE = path.join('/tmp', 'drm_vault_store.json');
+const CHUNK_SIZE = 900 * 1024; // Firestore docs max out at 1 MiB
+const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 
-try {
-  if (fs.existsSync(LOCAL_PERSIST_FILE)) {
-    const raw = fs.readFileSync(LOCAL_PERSIST_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    for (const [k, v] of Object.entries(parsed)) {
-      localStore.set(k, v);
-    }
-  }
-} catch (e) {}
+const COL_IMAGES = 'images';
+const COL_CLAIMED = 'claimed_usernames';
+const COL_EPHEMERAL = 'ephemeral_accounts';
+const chunkCol = (token) => `${COL_IMAGES}/${token}/chunks`;
 
-function persistLocalStore() {
+// ---------------------------------------------------------------------------
+// Adapters
+// ---------------------------------------------------------------------------
+
+function loadServiceAccount() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) return null;
   try {
-    const obj = {};
-    for (const [k, v] of localStore.entries()) {
-      obj[k] = v;
-    }
-    fs.writeFileSync(LOCAL_PERSIST_FILE, JSON.stringify(obj), 'utf8');
-  } catch (e) {}
+    const text = raw.trim().startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8');
+    return JSON.parse(text);
+  } catch (e) {
+    console.error('FIREBASE_SERVICE_ACCOUNT is set but could not be parsed:', e.message);
+    return null;
+  }
 }
 
+function createFirestoreAdapter(serviceAccount) {
+  const { initializeApp, getApps, cert } = require('firebase-admin/app');
+  const { getFirestore } = require('firebase-admin/firestore');
+
+  const app = getApps()[0] || initializeApp({ credential: cert(serviceAccount) });
+  const db = getFirestore(app);
+  try {
+    db.settings({ ignoreUndefinedProperties: true });
+  } catch (e) {
+    // settings() can only be called once per instance; ignore on warm reuse
+  }
+
+  const ref = (col, id) => db.collection(col).doc(String(id));
+
+  return {
+    kind: 'firestore',
+    async get(col, id) {
+      const snap = await ref(col, id).get();
+      return snap.exists ? snap.data() : null;
+    },
+    async set(col, id, data) {
+      await ref(col, id).set(data);
+    },
+    async delete(col, id) {
+      await ref(col, id).delete();
+    },
+    async queryEq(col, field, value) {
+      const snap = await db.collection(col).where(field, '==', value).get();
+      return snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+    },
+    async queryLt(col, field, value) {
+      const snap = await db.collection(col).where(field, '<', value).get();
+      return snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+    },
+    async transaction(fn) {
+      return db.runTransaction(async (t) => {
+        const tx = {
+          async get(col, id) {
+            const snap = await t.get(ref(col, id));
+            return snap.exists ? snap.data() : null;
+          },
+          set(col, id, data) {
+            t.set(ref(col, id), data);
+          },
+          delete(col, id) {
+            t.delete(ref(col, id));
+          }
+        };
+        return fn(tx);
+      });
+    }
+  };
+}
+
+function createMemoryAdapter() {
+  const cols = new Map();
+  const colMap = (col) => {
+    if (!cols.has(col)) cols.set(col, new Map());
+    return cols.get(col);
+  };
+  const clone = (v) => (v == null ? null : JSON.parse(JSON.stringify(v)));
+
+  const adapter = {
+    kind: 'memory',
+    async get(col, id) {
+      return clone(colMap(col).get(String(id)));
+    },
+    async set(col, id, data) {
+      colMap(col).set(String(id), clone(data));
+    },
+    async delete(col, id) {
+      colMap(col).delete(String(id));
+    },
+    async queryEq(col, field, value) {
+      return [...colMap(col).entries()]
+        .filter(([, d]) => d && d[field] === value)
+        .map(([id, d]) => ({ id, data: clone(d) }));
+    },
+    async queryLt(col, field, value) {
+      return [...colMap(col).entries()]
+        .filter(([, d]) => d && d[field] < value)
+        .map(([id, d]) => ({ id, data: clone(d) }));
+    },
+    async transaction(fn) {
+      // Single-threaded event loop: run reads and writes directly.
+      const tx = {
+        get: (col, id) => adapter.get(col, id),
+        set: (col, id, data) => { colMap(col).set(String(id), clone(data)); },
+        delete: (col, id) => { colMap(col).delete(String(id)); }
+      };
+      return fn(tx);
+    }
+  };
+  return adapter;
+}
+
+const serviceAccount = loadServiceAccount();
+const db = serviceAccount ? createFirestoreAdapter(serviceAccount) : createMemoryAdapter();
+if (db.kind === 'memory') {
+  console.warn('[storage] FIREBASE_SERVICE_ACCOUNT not set: using in-memory storage (data is NOT shared or persisted).');
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const cleanName = (raw) => String(raw || '').trim().toLowerCase();
+
+async function writeChunks(token, encryptedData) {
+  const chunks = [];
+  for (let i = 0; i < encryptedData.length; i += CHUNK_SIZE) {
+    chunks.push(encryptedData.slice(i, i + CHUNK_SIZE));
+  }
+  await Promise.all(chunks.map((data, i) => db.set(chunkCol(token), i, { data })));
+  return chunks.length;
+}
+
+async function readChunks(token, count) {
+  const parts = await Promise.all(
+    Array.from({ length: count }, (_, i) => db.get(chunkCol(token), i))
+  );
+  if (parts.some((p) => !p)) return null;
+  return parts.map((p) => p.data).join('');
+}
+
+async function deleteChunks(token, count) {
+  if (!count) return;
+  await Promise.all(Array.from({ length: count }, (_, i) => db.delete(chunkCol(token), i)));
+}
+
+async function deleteImageCompletely(token, record) {
+  await deleteChunks(token, record && record.chunkCount);
+  await db.delete(COL_IMAGES, token);
+}
+
+// ---------------------------------------------------------------------------
+// Images
+// ---------------------------------------------------------------------------
+
 async function saveImageRecord(token, record) {
-  localStore.set(token, record);
-  persistLocalStore();
+  const { encryptedData, ...meta } = record;
+  const chunkCount = encryptedData ? await writeChunks(token, encryptedData) : 0;
+  await db.set(COL_IMAGES, token, { ...meta, chunkCount });
 }
 
 async function getImageRecord(token) {
-  // Reload from /tmp if not in memory
-  if (!localStore.has(token) && fs.existsSync(LOCAL_PERSIST_FILE)) {
-    try {
-      const raw = fs.readFileSync(LOCAL_PERSIST_FILE, 'utf8');
-      const parsed = JSON.parse(raw);
-      if (parsed[token]) localStore.set(token, parsed[token]);
-    } catch (e) {}
+  if (!token) return null;
+  const meta = await db.get(COL_IMAGES, token);
+  if (!meta) return null;
+  if (meta.chunkCount > 0) {
+    const encryptedData = await readChunks(token, meta.chunkCount);
+    if (encryptedData) meta.encryptedData = encryptedData;
   }
-  return localStore.get(token) || null;
+  return meta;
 }
 
 async function burnImageRecord(token, reason = 'view_completed') {
-  const record = await getImageRecord(token);
+  const record = await db.get(COL_IMAGES, token);
   if (!record) return null;
 
-  record.is_burned = true;
-  record.isBurned = true;
-  record.is_viewed = true;
-  record.isViewed = true;
-  record.burned_at = new Date().toISOString();
-  record.burnedAt = record.burned_at;
-  record.burn_reason = reason;
-  record.burnReason = reason;
+  await deleteChunks(token, record.chunkCount);
 
-  delete record.encryptedData;
-  delete record.iv;
-  delete record.authTag;
+  const burnedAt = new Date().toISOString();
+  const updated = { ...record };
+  delete updated.iv;
+  delete updated.authTag;
+  delete updated.encryptedData;
+  Object.assign(updated, {
+    chunkCount: 0,
+    is_burned: true,
+    isBurned: true,
+    is_viewed: true,
+    isViewed: true,
+    burned_at: burnedAt,
+    burnedAt,
+    burn_reason: reason,
+    burnReason: reason
+  });
 
-  localStore.set(token, record);
-  persistLocalStore();
-  return record;
+  await db.set(COL_IMAGES, token, updated);
+  return updated;
 }
 
 async function listUserImages(userId) {
-  const images = [];
-  if (fs.existsSync(LOCAL_PERSIST_FILE)) {
-    try {
-      const raw = fs.readFileSync(LOCAL_PERSIST_FILE, 'utf8');
-      const parsed = JSON.parse(raw);
-      for (const [k, v] of Object.entries(parsed)) {
-        if (!localStore.has(k)) localStore.set(k, v);
-      }
-    } catch (e) {}
-  }
-
-  for (const item of localStore.values()) {
-    if (item && item.userId === userId) {
-      images.push({
-        token: item.token,
-        filename: item.filename,
-        mimeType: item.mimeType,
-        filesize: item.filesize,
-        createdAt: item.createdAt,
-        expiresAt: item.expiresAt,
-        viewDuration: item.viewDuration,
-        allowScreenshots: item.allowScreenshots,
-        allowDownload: item.allowDownload,
-        spotlightMode: item.spotlightMode,
-        spotlightIntensity: item.spotlightIntensity || 'full',
-        watermarkEnabled: item.watermarkEnabled,
-        isGoogleSender: Boolean(item.isGoogleSender),
-        isViewed: item.isViewed || item.is_viewed,
-        viewedAt: item.viewedAt,
-        viewerIp: item.viewerIp,
-        isBurned: item.isBurned || item.is_burned,
-        burnedAt: item.burnedAt
-      });
-    }
-  }
-  return images.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const rows = await db.queryEq(COL_IMAGES, 'userId', userId);
+  return rows
+    .map(({ data: item }) => ({
+      token: item.token,
+      filename: item.filename,
+      mimeType: item.mimeType,
+      filesize: item.filesize,
+      createdAt: item.createdAt,
+      expiresAt: item.expiresAt,
+      viewDuration: item.viewDuration,
+      allowScreenshots: item.allowScreenshots,
+      allowDownload: item.allowDownload,
+      spotlightMode: item.spotlightMode,
+      spotlightIntensity: item.spotlightIntensity || 'full',
+      watermarkEnabled: item.watermarkEnabled,
+      isGoogleSender: Boolean(item.isGoogleSender),
+      isViewed: item.isViewed || item.is_viewed,
+      viewedAt: item.viewedAt,
+      viewerIp: item.viewerIp,
+      isBurned: item.isBurned || item.is_burned,
+      burnedAt: item.burnedAt
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 async function updateImageRecord(token, updates, userId) {
-  const record = await getImageRecord(token);
+  const record = await db.get(COL_IMAGES, token);
   if (!record) return null;
   if (userId && record.userId !== userId) return null;
   if (record.isBurned || record.isViewed || record.is_burned || record.is_viewed) {
@@ -129,79 +275,48 @@ async function updateImageRecord(token, updates, userId) {
     record.spotlightIntensity = ['small', 'large', 'full'].includes(updates.spotlightIntensity) ? updates.spotlightIntensity : 'full';
   }
 
-  localStore.set(token, record);
-  persistLocalStore();
+  await db.set(COL_IMAGES, token, record);
   return record;
 }
 
 async function deleteImageRecord(token, userId) {
-  const record = await getImageRecord(token);
+  const record = await db.get(COL_IMAGES, token);
   if (!record || (userId && record.userId !== userId)) return false;
-  localStore.delete(token);
-  persistLocalStore();
+  await deleteImageCompletely(token, record);
   return true;
 }
 
-// --- USER ACCOUNT & USERNAME CLAIM SYSTEM ---
-function getClaimedUsernamesMap() {
-  if (!localStore.has('__claimed_usernames__')) {
-    localStore.set('__claimed_usernames__', {});
-  }
-  return localStore.get('__claimed_usernames__');
-}
-
-function getEphemeralAccountsMap() {
-  if (!localStore.has('__ephemeral_accounts__')) {
-    localStore.set('__ephemeral_accounts__', {});
-  }
-  return localStore.get('__ephemeral_accounts__');
-}
+// ---------------------------------------------------------------------------
+// User accounts & username claims
+// ---------------------------------------------------------------------------
 
 async function cleanupExpiredAccounts() {
-  const now = Date.now();
-  const TWELVE_HOURS = 12 * 60 * 60 * 1000;
-  const ephemerals = getEphemeralAccountsMap();
-  const expiredUserIds = [];
-
-  for (const [key, account] of Object.entries(ephemerals)) {
-    if (account && account.createdAt && (now - account.createdAt > TWELVE_HOURS)) {
-      expiredUserIds.push('user_' + key);
-      delete ephemerals[key];
-    }
-  }
-
-  // Shred images from expired ephemeral accounts older than 12 hours
-  if (expiredUserIds.length > 0) {
-    for (const [key, item] of localStore.entries()) {
-      if (item && item.userId && expiredUserIds.includes(item.userId)) {
-        if (!item.isGoogleSender) {
-          localStore.delete(key);
-        }
+  try {
+    const expired = await db.queryLt(COL_EPHEMERAL, 'createdAt', Date.now() - TWELVE_HOURS);
+    for (const { id } of expired) {
+      await db.delete(COL_EPHEMERAL, id);
+      // Shred images from the expired ephemeral account
+      const images = await db.queryEq(COL_IMAGES, 'userId', 'user_' + id.replace(/[^a-z0-9_-]/g, '_'));
+      for (const { id: token, data } of images) {
+        if (!data.isGoogleSender) await deleteImageCompletely(token, data);
       }
     }
+  } catch (e) {
+    console.error('[storage] cleanupExpiredAccounts failed:', e.message);
   }
-
-  persistLocalStore();
 }
 
 async function getGoogleUserClaimedUsername(googleUid) {
-  const claimed = getClaimedUsernamesMap();
-  for (const [uname, record] of Object.entries(claimed)) {
-    if (record && record.googleUid === googleUid) {
-      return record;
-    }
-  }
-  return null;
+  if (!googleUid) return null;
+  const rows = await db.queryEq(COL_CLAIMED, 'googleUid', googleUid);
+  return rows.length ? rows[0].data : null;
 }
 
 async function isUsernameClaimed(rawUsername) {
-  const clean = String(rawUsername).trim().toLowerCase();
-  const claimed = getClaimedUsernamesMap();
-  return claimed[clean] || null;
+  return db.get(COL_CLAIMED, cleanName(rawUsername));
 }
 
 async function checkUsernameAvailability(rawUsername, googleUid) {
-  await cleanupExpiredAccounts();
   const raw = String(rawUsername || '').trim();
   const clean = raw.toLowerCase();
 
@@ -215,9 +330,7 @@ async function checkUsernameAvailability(rawUsername, googleUid) {
     return { available: false, error: 'Only letters, numbers, underscores (_), and hyphens (-) are allowed.' };
   }
 
-  const claimed = getClaimedUsernamesMap();
-  const existingClaim = claimed[clean];
-
+  const existingClaim = await db.get(COL_CLAIMED, clean);
   if (existingClaim) {
     if (googleUid && existingClaim.googleUid === googleUid) {
       return { available: true, isCurrent: true, message: `@${raw} is already your claimed username.` };
@@ -229,64 +342,60 @@ async function checkUsernameAvailability(rawUsername, googleUid) {
 }
 
 async function claimUsernameForGoogle(rawUsername, googleData) {
-  await cleanupExpiredAccounts();
-  const clean = String(rawUsername).trim().toLowerCase();
-  const claimed = getClaimedUsernamesMap();
+  const clean = cleanName(rawUsername);
+  const previous = await getGoogleUserClaimedUsername(googleData.googleUid);
 
-  if (claimed[clean] && claimed[clean].googleUid !== googleData.googleUid) {
-    throw new Error(`Username @${rawUsername} is already permanently claimed by another Google account.`);
-  }
-
-  // Remove any previously claimed username by this Google UID if changing
-  for (const [u, rec] of Object.entries(claimed)) {
-    if (rec && rec.googleUid === googleData.googleUid && u !== clean) {
-      delete claimed[u];
+  // Transaction: the availability check and the write happen atomically, so
+  // two people can never claim the same handle at the same moment.
+  return db.transaction(async (tx) => {
+    const existing = await tx.get(COL_CLAIMED, clean);
+    if (existing && existing.googleUid !== googleData.googleUid) {
+      throw new Error(`Username @${rawUsername} is already permanently claimed by another Google account.`);
     }
-  }
 
-  const record = {
-    username: rawUsername.trim(),
-    cleanUsername: clean,
-    googleUid: googleData.googleUid,
-    email: googleData.email,
-    displayName: googleData.displayName || rawUsername,
-    photoURL: googleData.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(rawUsername)}`,
-    claimedAt: new Date().toISOString(),
-    isGoogleVerified: true
-  };
+    const record = {
+      username: String(rawUsername).trim(),
+      cleanUsername: clean,
+      googleUid: googleData.googleUid,
+      email: googleData.email || '',
+      displayName: googleData.displayName || String(rawUsername).trim(),
+      photoURL: googleData.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(rawUsername)}`,
+      claimedAt: new Date().toISOString(),
+      isGoogleVerified: true
+    };
 
-  claimed[clean] = record;
-
-  // Remove from ephemeral accounts if present
-  const ephemerals = getEphemeralAccountsMap();
-  delete ephemerals[clean];
-
-  persistLocalStore();
-  return record;
+    // Release the user's previous handle if they are changing it
+    if (previous && previous.cleanUsername && previous.cleanUsername !== clean) {
+      tx.delete(COL_CLAIMED, previous.cleanUsername);
+    }
+    tx.set(COL_CLAIMED, clean, record);
+    // Evict any ephemeral session holding this name
+    tx.delete(COL_EPHEMERAL, clean);
+    return record;
+  });
 }
 
 async function registerEphemeralUsername(rawUsername) {
   await cleanupExpiredAccounts();
-  const clean = String(rawUsername).trim().toLowerCase();
-  const claimed = getClaimedUsernamesMap();
+  const clean = cleanName(rawUsername);
 
-  if (claimed[clean]) {
-    throw new Error(`Username @${rawUsername} is permanently claimed by a verified Google account. Sign in with Google to use it.`);
-  }
+  return db.transaction(async (tx) => {
+    const claimed = await tx.get(COL_CLAIMED, clean);
+    if (claimed) {
+      throw new Error(`Username @${String(rawUsername).trim()} is permanently claimed by a verified Google account. Sign in with Google to use it.`);
+    }
 
-  const ephemerals = getEphemeralAccountsMap();
-  const now = Date.now();
-  const account = {
-    username: rawUsername.trim(),
-    cleanUsername: clean,
-    createdAt: now,
-    expiresAt: now + (12 * 60 * 60 * 1000), // 12 hours lifespan
-    isGoogleVerified: false
-  };
-
-  ephemerals[clean] = account;
-  persistLocalStore();
-  return account;
+    const now = Date.now();
+    const account = {
+      username: String(rawUsername).trim(),
+      cleanUsername: clean,
+      createdAt: now,
+      expiresAt: now + TWELVE_HOURS,
+      isGoogleVerified: false
+    };
+    tx.set(COL_EPHEMERAL, clean, account);
+    return account;
+  });
 }
 
 module.exports = {
@@ -301,5 +410,6 @@ module.exports = {
   registerEphemeralUsername,
   isUsernameClaimed,
   checkUsernameAvailability,
-  cleanupExpiredAccounts
+  cleanupExpiredAccounts,
+  storageKind: db.kind
 };
