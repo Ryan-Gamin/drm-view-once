@@ -1,0 +1,53 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# Route clean /v/:token URLs to the viewer SPA with query param
+[[redirects]]
+  from = "/v/:token"
+  to = "/viewer.html?t=:token"
+  status = 200
+
+# Route API endpoints to Netlify serverless functions
+[[redirects]]
+  from = "/api/auth/*"
+  to = "/.netlify/functions/auth"
+  status = 200
+
+[[redirects]]
+  from = "/api/upload"
+  to = "/.netlify/functions/upload"
+  status = 200
+
+[[redirects]]
+  from = "/api/view/*"
+  to = "/.netlify/functions/view"
+  status = 200
+
+[[redirects]]
+  from = "/api/images/*"
+  to = "/.netlify/functions/images"
+  status = 200
+
+[[redirects]]
+  from = "/api/images"
+  to = "/.netlify/functions/images"
+  status = 200
+
+# Security Headers across the application
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "display-capture=(), camera=(), microphone=()"
+
+# Strict Anti-Caching for sensitive view endpoints
+[[headers]]
+  for = "/api/view/*"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate, private, max-age=0"
+    Pragma = "no-cache"
+    Expires = "0"

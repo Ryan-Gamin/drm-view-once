@@ -1,0 +1,11 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+*.enc
+.env
+.DS_Store
+dist/
+.netlify/
+/tmp/drm_vault_store.json
+vault.db

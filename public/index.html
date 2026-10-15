@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DRM Vault | Secure View-Once Image Sharing</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="/js/qrcode.min.js"></script>
+</head>
+<body class="bg-grid">
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <a href="/" class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="brand-title">DRM Vault</span>
+            <span class="brand-badge">View-Once</span>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted);">Confidential Anti-Screenshot Image Sharing</p>
+        </div>
+      </a>
+
+      <!-- Auth State Container -->
+      <div id="authContainer">
+        <!-- Rendered by app.js -->
+        <div class="btn btn-secondary" style="font-size: 0.85rem; opacity: 0.7;">Checking authentication...</div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main>
+      <!-- Logged Out View -->
+      <section id="loginPromptSection" class="card" style="text-align: center; padding: 3.5rem 2rem; display: none;">
+        <div style="max-width: 480px; margin: 0 auto;">
+          <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(0, 242, 254, 0.1); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; color: var(--accent-cyan);">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+          </div>
+          <h2 style="font-size: 1.6rem; font-weight: 700; margin-bottom: 0.75rem;">Sign in to Share Secure Images</h2>
+          <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 2rem;">
+            Upload confidential images with client-side DRM canvas rendering, automatic single-view shredding, and anti-screenshot shields.
+          </p>
+
+          <!-- Google Sign In Button Container -->
+          <div id="googleBtnWrapper" style="display: flex; justify-content: center; margin-bottom: 1rem;">
+            <div id="g_id_onload"></div>
+            <div id="googleSignInBtn"></div>
+          </div>
+
+          <!-- Quick 1-Click Demo Login -->
+          <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">Or test immediately without setting up Google credentials:</p>
+            <button id="demoLoginBtn" class="btn btn-secondary" style="width: 100%;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polygon points="10 8 16 12 10 16 10 8"></polygon>
+              </svg>
+              Sign In with 1-Click Demo Google Account
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Logged In Dashboard View -->
+      <section id="dashboardSection" style="display: none;">
+        
+        <!-- Upload Card -->
+        <div class="card" style="margin-bottom: 2rem;">
+          <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>Upload View-Once Image</span>
+            <span class="shield-pill">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+              DRM Protected
+            </span>
+          </h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+            The recipient will only be able to view this image once. The image is encrypted, rendered on a secured canvas, and shredded immediately from the server upon unlock.
+          </p>
+
+          <!-- Dropzone -->
+          <div id="dropzone" class="dropzone">
+            <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
+            <div class="dropzone-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <p style="font-weight: 600; margin-bottom: 0.25rem;">Click to choose an image or drag & drop</p>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">PNG, JPG, WEBP, GIF up to 25MB</p>
+          </div>
+
+          <!-- File Selected Preview -->
+          <div id="previewCard" class="preview-container" style="display: none;">
+            <img id="previewThumb" class="preview-thumb" src="" alt="Thumbnail">
+            <div style="flex: 1; min-width: 0;">
+              <p id="previewName" style="font-weight: 600; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">filename.png</p>
+              <p id="previewSize" style="font-size: 0.8rem; color: var(--text-muted);">1.2 MB</p>
+            </div>
+            <button id="removeFileBtn" class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Change</button>
+          </div>
+
+          <!-- DRM Options Grid -->
+          <div style="margin-top: 1.75rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem;">
+            
+            <div class="form-group">
+              <label class="form-label" for="durationSelect">Viewing Duration</label>
+              <select id="durationSelect" class="form-select">
+                <option value="15">15 Seconds (Strict)</option>
+                <option value="30" selected>30 Seconds (Recommended)</option>
+                <option value="60">60 Seconds</option>
+                <option value="0">Unlimited (Burns when tab closes)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="antiScreenshotSelect">Anti-Screenshot Shield</label>
+              <select id="antiScreenshotSelect" class="form-select">
+                <option value="strict" selected>Strict (Blackout on blur & block combos)</option>
+                <option value="standard">Standard (Block print & context menu)</option>
+              </select>
+            </div>
+
+          </div>
+
+          <!-- Toggles -->
+          <div style="margin-top: 0.5rem;">
+            <label class="switch-label">
+              <div>
+                <p style="font-weight: 600; font-size: 0.9rem;">Dynamic Forensic Watermarking</p>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">Bakes viewer's live IP address, time, and session trace across the canvas</p>
+              </div>
+              <input type="checkbox" id="watermarkToggle" class="switch-input" checked>
+            </label>
+
+            <label class="switch-label">
+              <div>
+                <p style="font-weight: 600; font-size: 0.9rem;">Hold-to-Reveal (Spotlight Lens Mode)</p>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">Hides the full picture; recipient must hold down to reveal only under the cursor</p>
+              </div>
+              <input type="checkbox" id="spotlightToggle" class="switch-input">
+            </label>
+          </div>
+
+          <!-- Submit Button -->
+          <div style="margin-top: 1.5rem;">
+            <button id="uploadBtn" class="btn btn-primary" style="width: 100%; font-size: 1.05rem; padding: 0.85rem;" disabled>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              <span>Create View-Once DRM Link</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Links History Table -->
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="font-size: 1.1rem; font-weight: 700;">Your Created Links</h3>
+            <button id="refreshLinksBtn" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">Refresh</button>
+          </div>
+
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Filename</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                  <th>Viewer IP</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="linksTableBody">
+                <tr>
+                  <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">No uploads yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+
+  <!-- Share Modal -->
+  <div id="shareModal" class="modal-overlay">
+    <div class="modal-content">
+      <div style="text-align: center; margin-bottom: 1.5rem;">
+        <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(0, 255, 136, 0.15); color: var(--accent-green); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+        <h3 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 0.25rem;">View-Once Link Ready</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">This link self-destructs the moment it is opened.</p>
+      </div>
+
+      <!-- Link Copy Field -->
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem;">
+        <input type="text" id="shareUrlInput" class="form-input" readonly style="font-family: monospace; font-size: 0.85rem;">
+        <button id="copyLinkBtn" class="btn btn-primary" style="white-space: nowrap;">
+          <span id="copyBtnText">Copy</span>
+        </button>
+      </div>
+
+      <!-- QR Code Container -->
+      <div id="qrcodeWrapper" class="qr-container">
+        <div id="qrcode"></div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+        <a id="openLinkBtn" href="#" target="_blank" class="btn btn-secondary" style="flex: 1; text-align: center;">Open Link</a>
+        <button id="closeModalBtn" class="btn btn-secondary" style="flex: 1;">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
