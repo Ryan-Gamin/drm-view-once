@@ -120,29 +120,61 @@ async function runTests() {
 
   // 9. Google Sign-in & Username Claim System
   console.log('\n--- Testing Google Sign-in, Username Claim, & Option 4 Watermark Grid ---');
+  const testGoogleUid = 'goog_test_' + Date.now();
+  const testClaimHandle = 'EliteVip_' + Math.floor(Math.random() * 1000);
+
   const googleLoginRes = await fetch(`${BASE_URL}/api/auth/google`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      googleUid: 'goog_test_uid_9988',
+      googleUid: testGoogleUid,
       email: 'testagent@gmail.com',
       displayName: 'Elite Agent',
-      photoURL: 'https://lh3.googleusercontent.com/test-photo',
-      claimedUsername: 'EliteVip'
+      photoURL: 'https://lh3.googleusercontent.com/test-photo'
     })
   });
   assert.strictEqual(googleLoginRes.status, 200);
   const googleLoginData = await googleLoginRes.json();
-  assert.strictEqual(googleLoginData.user.username, 'EliteVip');
   assert.strictEqual(googleLoginData.user.isGoogleVerified, true);
+  assert.strictEqual(googleLoginData.user.hasClaimedUsername, false, 'Does not immediately auto-claim a handle');
   const googleCookie = googleLoginRes.headers.get('set-cookie');
-  console.log('✓ Google account sign-in & username claim succeeded for @' + googleLoginData.user.username);
+  console.log('✓ Google account sign-in succeeded without auto-claiming handle');
+
+  // 9b. Check availability of desired handle before claiming
+  const checkAvailRes = await fetch(`${BASE_URL}/api/auth/check-username?username=${testClaimHandle}&googleUid=${testGoogleUid}`);
+  const checkAvailData = await checkAvailRes.json();
+  assert.strictEqual(checkAvailData.available, true, 'Handle should be available initially');
+  console.log('✓ Verified: Real-time username check reports handle available to claim');
+
+  // 9c. Explicitly claim the handle
+  const claimRes = await fetch(`${BASE_URL}/api/auth/google/claim`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cookie': googleCookie
+    },
+    body: JSON.stringify({
+      googleUid: testGoogleUid,
+      claimedUsername: testClaimHandle
+    })
+  });
+  assert.strictEqual(claimRes.status, 200);
+  const claimData = await claimRes.json();
+  assert.strictEqual(claimData.user.username, testClaimHandle);
+  assert.strictEqual(claimData.user.hasClaimedUsername, true);
+  console.log('✓ Google account explicitly claimed handle @' + testClaimHandle + ' after checking availability');
+
+  // 9d. Verify availability check now reports taken for another user
+  const checkTakenRes = await fetch(`${BASE_URL}/api/auth/check-username?username=${testClaimHandle}&googleUid=other_google_uid`);
+  const checkTakenData = await checkTakenRes.json();
+  assert.strictEqual(checkTakenData.available, false, 'Handle should now be taken');
+  console.log('✓ Verified: Availability check flags @' + testClaimHandle + ' as already taken by another user');
 
   // 10. Verify Ephemeral user cannot take claimed Google username
   const claimConflictRes = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'EliteVip' })
+    body: JSON.stringify({ username: testClaimHandle })
   });
   assert.strictEqual(claimConflictRes.status, 400);
   const claimConflictData = await claimConflictRes.json();
@@ -171,7 +203,7 @@ async function runTests() {
       'Cookie': googleCookie
     },
     body: JSON.stringify({
-      username: 'EliteVip',
+      username: testClaimHandle,
       fileData: TINY_PNG_BASE64,
       filename: 'google_forensic_test.png',
       mimeType: 'image/png',

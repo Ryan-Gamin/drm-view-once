@@ -141,15 +141,71 @@ function showUsernamePrompt() {
   userHeaderContainer.innerHTML = '';
 }
 
-function openClaimModal() {
+let checkAvailabilityTimer = null;
+async function checkClaimInputAvailability(handle) {
+  const claimAvailabilityNotice = document.getElementById('claimAvailabilityNotice');
+  const claimStatusSpinner = document.getElementById('claimStatusSpinner');
+  const submitClaimBtn = document.getElementById('submitClaimBtn');
+
+  const raw = String(handle || '').trim();
+  if (!raw || raw.length < 2) {
+    if (claimStatusSpinner) claimStatusSpinner.style.display = 'none';
+    if (claimAvailabilityNotice) {
+      claimAvailabilityNotice.style.display = 'block';
+      claimAvailabilityNotice.style.color = 'var(--text-muted)';
+      claimAvailabilityNotice.innerText = 'Username must be at least 2 characters.';
+    }
+    if (submitClaimBtn) submitClaimBtn.disabled = true;
+    return;
+  }
+
+  if (claimStatusSpinner) claimStatusSpinner.style.display = 'inline-block';
+
+  try {
+    const googleUid = currentUserData?.googleUid || (window.firebaseAuth?.auth?.currentUser?.uid) || '';
+    const res = await fetch(`/api/auth/check-username?username=${encodeURIComponent(raw)}&googleUid=${encodeURIComponent(googleUid)}`);
+    const data = await res.json();
+
+    if (claimStatusSpinner) claimStatusSpinner.style.display = 'none';
+
+    if (claimAvailabilityNotice) {
+      claimAvailabilityNotice.style.display = 'block';
+      if (data.available) {
+        claimAvailabilityNotice.style.color = '#00ff88';
+        claimAvailabilityNotice.innerText = `✓ ${data.message || `@${raw} is available to claim!`}`;
+        if (submitClaimBtn) submitClaimBtn.disabled = false;
+      } else {
+        claimAvailabilityNotice.style.color = '#ff3366';
+        claimAvailabilityNotice.innerText = `✕ ${data.error || `@${raw} is already taken.`}`;
+        if (submitClaimBtn) submitClaimBtn.disabled = true;
+      }
+    }
+  } catch (e) {
+    if (claimStatusSpinner) claimStatusSpinner.style.display = 'none';
+  }
+}
+
+function openClaimModal(suggestedName) {
   const claimModal = document.getElementById('claimModal');
   const claimedUsernameInput = document.getElementById('claimedUsernameInput');
-  const claimErrorText = document.getElementById('claimErrorText');
+  const claimAvailabilityNotice = document.getElementById('claimAvailabilityNotice');
+  const submitClaimBtn = document.getElementById('submitClaimBtn');
+
+  const defaultHandle = (typeof suggestedName === 'string' && suggestedName.trim())
+    ? suggestedName.trim()
+    : (currentUserData?.hasClaimedUsername ? currentUserData.username : (currentUsername || ''));
+
   if (claimedUsernameInput) {
-    claimedUsernameInput.value = currentUsername || '';
+    claimedUsernameInput.value = defaultHandle;
   }
-  if (claimErrorText) claimErrorText.style.display = 'none';
+  if (claimAvailabilityNotice) claimAvailabilityNotice.style.display = 'none';
+  if (submitClaimBtn) submitClaimBtn.disabled = true;
   if (claimModal) claimModal.classList.add('active');
+  if (claimedUsernameInput) claimedUsernameInput.focus();
+
+  if (defaultHandle) {
+    checkClaimInputAvailability(defaultHandle);
+  }
 }
 
 function closeClaimModal() {
@@ -166,6 +222,7 @@ function renderActiveUser() {
   }
 
   const isGoogle = Boolean(currentUserData && currentUserData.isGoogleVerified);
+  const hasClaimed = Boolean(currentUserData && currentUserData.hasClaimedUsername);
   const avatarUrl = (currentUserData && currentUserData.avatar) || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(currentUsername)}`;
 
   const badgeHtml = isGoogle
@@ -178,8 +235,8 @@ function renderActiveUser() {
        </span>`;
 
   const extraBtnHtml = isGoogle
-    ? `<button id="claimUsernameBtn" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; border-color: rgba(66, 133, 244, 0.4); color: #64b5f6;">
-         Claim Handle
+    ? `<button id="claimUsernameBtn" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; border-color: rgba(66, 133, 244, 0.4); color: #64b5f6; font-weight: 600;">
+         ${hasClaimed ? 'Change Handle' : 'Claim Handle'}
        </button>`
     : `<button id="upgradeToGoogleBtn" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; border-color: rgba(66, 133, 244, 0.4); color: #64b5f6;">
          Verify with Google
@@ -204,7 +261,7 @@ function renderActiveUser() {
     </div>
   `;
 
-  document.getElementById('claimUsernameBtn')?.addEventListener('click', openClaimModal);
+  document.getElementById('claimUsernameBtn')?.addEventListener('click', () => openClaimModal());
   document.getElementById('upgradeToGoogleBtn')?.addEventListener('click', handleGoogleSignIn);
 
   document.getElementById('switchUserBtn')?.addEventListener('click', async () => {
@@ -260,7 +317,7 @@ async function handleGoogleSignIn(e) {
     const res = await signInWithPopup(auth, provider);
     const googleUser = res.user;
 
-    const candidateUsername = currentUsername || '';
+    // Authenticate with server WITHOUT immediately auto-claiming a username
     const backendRes = await fetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -268,8 +325,7 @@ async function handleGoogleSignIn(e) {
         googleUid: googleUser.uid,
         email: googleUser.email,
         displayName: googleUser.displayName,
-        photoURL: googleUser.photoURL,
-        claimedUsername: candidateUsername
+        photoURL: googleUser.photoURL
       })
     });
 
@@ -284,6 +340,12 @@ async function handleGoogleSignIn(e) {
     localStorage.setItem('drm_user_data', JSON.stringify(currentUserData));
     renderActiveUser();
     loadUserLinks();
+
+    // If user has not permanently claimed a handle yet, let them choose/change and claim it now!
+    if (!currentUserData.hasClaimedUsername) {
+      const candidate = currentUsername || googleUser.displayName || '';
+      openClaimModal(candidate);
+    }
   } catch (err) {
     console.error('Google Sign-In Error:', err);
     if (err.code === 'auth/unauthorized-domain') {
@@ -334,11 +396,19 @@ function setupEventListeners() {
   const googleSignInBtn = document.getElementById('googleSignInBtn');
   googleSignInBtn?.addEventListener('click', handleGoogleSignIn);
 
+  // Real-time username input checking for the Claim Handle modal
+  const claimedUsernameInput = document.getElementById('claimedUsernameInput');
+  claimedUsernameInput?.addEventListener('input', () => {
+    clearTimeout(checkAvailabilityTimer);
+    checkAvailabilityTimer = setTimeout(() => {
+      checkClaimInputAvailability(claimedUsernameInput.value);
+    }, 200);
+  });
+
   const claimUsernameForm = document.getElementById('claimUsernameForm');
   claimUsernameForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const claimedUsernameInput = document.getElementById('claimedUsernameInput');
-    const claimErrorText = document.getElementById('claimErrorText');
+    const claimAvailabilityNotice = document.getElementById('claimAvailabilityNotice');
     const submitClaimBtn = document.getElementById('submitClaimBtn');
 
     const newHandle = claimedUsernameInput.value.trim();
@@ -350,18 +420,18 @@ function setupEventListeners() {
     try {
       const googleUid = currentUserData?.googleUid || (window.firebaseAuth?.auth?.currentUser?.uid);
       if (!googleUid) {
-        throw new Error('Please sign in with Google to claim a permanent username.');
+        throw new Error('Please sign in with Google to claim a permanent handle.');
       }
 
-      const res = await fetch('/api/auth/google', {
+      const res = await fetch('/api/auth/google/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           googleUid,
+          claimedUsername: newHandle,
           email: currentUserData?.email || '',
           displayName: currentUserData?.displayName || '',
-          photoURL: currentUserData?.avatar || '',
-          claimedUsername: newHandle
+          photoURL: currentUserData?.avatar || ''
         })
       });
 
@@ -378,9 +448,10 @@ function setupEventListeners() {
       loadUserLinks();
       closeClaimModal();
     } catch (err) {
-      if (claimErrorText) {
-        claimErrorText.innerText = err.message;
-        claimErrorText.style.display = 'block';
+      if (claimAvailabilityNotice) {
+        claimAvailabilityNotice.innerText = `✕ ${err.message}`;
+        claimAvailabilityNotice.style.color = '#ff3366';
+        claimAvailabilityNotice.style.display = 'block';
       }
     } finally {
       submitClaimBtn.disabled = false;

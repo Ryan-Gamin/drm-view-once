@@ -13,6 +13,7 @@ const {
   claimUsernameForGoogle,
   registerEphemeralUsername,
   isUsernameClaimed,
+  checkUsernameAvailability,
   cleanupExpiredAccounts
 } = require('./storage');
 
@@ -107,7 +108,16 @@ app.post(['/api/auth/login', '/api/auth/username'], async (req, res) => {
   }
 });
 
-// Check if a Google user has already claimed a username or if a username is available
+// Real-time username availability check (used by claim handle modal)
+app.get('/api/auth/check-username', async (req, res) => {
+  const user = parseUser(req);
+  const rawUsername = req.query.username ? String(req.query.username).trim() : '';
+  const googleUid = req.query.googleUid || (user && user.googleUid);
+  const result = await checkUsernameAvailability(rawUsername, googleUid);
+  return res.json(result);
+});
+
+// Check if a Google user has already claimed a username
 app.get('/api/auth/google/status', async (req, res) => {
   const googleUid = req.query.googleUid ? String(req.query.googleUid) : '';
   if (!googleUid) {
@@ -120,53 +130,27 @@ app.get('/api/auth/google/status', async (req, res) => {
   });
 });
 
-// Google Auth sign-in and optional username claim
+// Google Auth sign-in (does NOT auto-claim immediately, lets user pick/change handle)
 app.post('/api/auth/google', async (req, res) => {
-  const { googleUid, email, displayName, photoURL, claimedUsername } = req.body;
+  const { googleUid, email, displayName, photoURL } = req.body;
 
   if (!googleUid) {
     return res.status(400).json({ error: 'googleUid is required' });
   }
 
   try {
-    let existingClaim = await getGoogleUserClaimedUsername(googleUid);
-    let usernameToUse = existingClaim ? existingClaim.username : null;
-
-    if (claimedUsername && claimedUsername.trim()) {
-      const cleanReq = claimedUsername.trim();
-      if (cleanReq.length < 2 || cleanReq.length > 30) {
-        return res.status(400).json({ error: 'Username must be between 2 and 30 characters.' });
-      }
-      const record = await claimUsernameForGoogle(cleanReq, {
-        googleUid,
-        email,
-        displayName,
-        photoURL
-      });
-      usernameToUse = record.username;
-    } else if (!existingClaim) {
-      // Auto-assign from displayName/email if not claimed yet
-      const candidate = (displayName || email.split('@')[0] || 'Agent').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20) || 'User';
-      // Try candidate, else append random
-      let chosenName = candidate;
-      const isTaken = await isUsernameClaimed(chosenName);
-      if (isTaken && isTaken.googleUid !== googleUid) {
-        chosenName = `${candidate}_${Math.floor(1000 + Math.random() * 9000)}`;
-      }
-      const record = await claimUsernameForGoogle(chosenName, {
-        googleUid,
-        email,
-        displayName,
-        photoURL
-      });
-      usernameToUse = record.username;
-    }
+    const existingClaim = await getGoogleUserClaimedUsername(googleUid);
+    const hasClaimedUsername = Boolean(existingClaim);
+    const fallbackHandle = (displayName || (email ? email.split('@')[0] : 'User')).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20) || 'User';
+    const activeUsername = existingClaim ? existingClaim.username : fallbackHandle;
 
     const user = {
       id: 'google_' + googleUid,
-      username: usernameToUse,
+      username: activeUsername,
+      hasClaimedUsername,
       email: email || '',
-      avatar: photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(usernameToUse)}`,
+      displayName: displayName || activeUsername,
+      avatar: photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(activeUsername)}`,
       isGoogleVerified: true,
       googleUid
     };
@@ -183,6 +167,61 @@ app.post('/api/auth/google', async (req, res) => {
 
     res.setHeader('Set-Cookie', setCookie);
     return res.json({ success: true, user });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Explicit handle claiming (checks availability before claiming)
+app.post('/api/auth/google/claim', async (req, res) => {
+  const user = parseUser(req);
+  const googleUid = req.body.googleUid || (user && user.googleUid);
+  const rawUsername = req.body.username || req.body.claimedUsername;
+
+  if (!googleUid) {
+    return res.status(401).json({ error: 'You must be signed in with Google to claim a handle.' });
+  }
+
+  if (!rawUsername || !String(rawUsername).trim()) {
+    return res.status(400).json({ error: 'Please enter a username to claim.' });
+  }
+
+  const cleanReq = String(rawUsername).trim();
+  const check = await checkUsernameAvailability(cleanReq, googleUid);
+  if (!check.available && !check.isCurrent) {
+    return res.status(400).json({ error: check.error });
+  }
+
+  try {
+    const record = await claimUsernameForGoogle(cleanReq, {
+      googleUid,
+      email: req.body.email || (user && user.email) || '',
+      displayName: req.body.displayName || (user && user.displayName) || cleanReq,
+      photoURL: req.body.photoURL || (user && user.avatar) || ''
+    });
+
+    const updatedUser = {
+      id: 'google_' + googleUid,
+      username: record.username,
+      hasClaimedUsername: true,
+      email: record.email,
+      displayName: record.displayName,
+      avatar: record.photoURL,
+      isGoogleVerified: true,
+      googleUid
+    };
+
+    const token = jwt.sign(updatedUser, JWT_SECRET, { expiresIn: '365d' });
+    const setCookie = stringifyCookie('vault_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Lax',
+      maxAge: 365 * 24 * 60 * 60,
+      path: '/'
+    });
+
+    res.setHeader('Set-Cookie', setCookie);
+    return res.json({ success: true, user: updatedUser });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }

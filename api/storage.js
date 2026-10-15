@@ -200,6 +200,34 @@ async function isUsernameClaimed(rawUsername) {
   return claimed[clean] || null;
 }
 
+async function checkUsernameAvailability(rawUsername, googleUid) {
+  await cleanupExpiredAccounts();
+  const raw = String(rawUsername || '').trim();
+  const clean = raw.toLowerCase();
+
+  if (!raw || raw.length < 2) {
+    return { available: false, error: 'Username must be at least 2 characters.' };
+  }
+  if (raw.length > 30) {
+    return { available: false, error: 'Username cannot exceed 30 characters.' };
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(raw)) {
+    return { available: false, error: 'Only letters, numbers, underscores (_), and hyphens (-) are allowed.' };
+  }
+
+  const claimed = getClaimedUsernamesMap();
+  const existingClaim = claimed[clean];
+
+  if (existingClaim) {
+    if (googleUid && existingClaim.googleUid === googleUid) {
+      return { available: true, isCurrent: true, message: `@${raw} is already your claimed username.` };
+    }
+    return { available: false, error: `@${raw} is already taken by another user.` };
+  }
+
+  return { available: true, message: `@${raw} is available to claim!` };
+}
+
 async function claimUsernameForGoogle(rawUsername, googleData) {
   await cleanupExpiredAccounts();
   const clean = String(rawUsername).trim().toLowerCase();
@@ -272,5 +300,6 @@ module.exports = {
   claimUsernameForGoogle,
   registerEphemeralUsername,
   isUsernameClaimed,
+  checkUsernameAvailability,
   cleanupExpiredAccounts
 };
