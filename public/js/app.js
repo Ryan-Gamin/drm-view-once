@@ -205,9 +205,7 @@ function renderActiveUser() {
   `;
 
   document.getElementById('claimUsernameBtn')?.addEventListener('click', openClaimModal);
-  document.getElementById('upgradeToGoogleBtn')?.addEventListener('click', () => {
-    document.getElementById('googleSignInBtn')?.click();
-  });
+  document.getElementById('upgradeToGoogleBtn')?.addEventListener('click', handleGoogleSignIn);
 
   document.getElementById('switchUserBtn')?.addEventListener('click', async () => {
     localStorage.removeItem('drm_username');
@@ -224,6 +222,85 @@ function renderActiveUser() {
     usernameInput.value = '';
     usernameInput.focus();
   });
+}
+
+async function handleGoogleSignIn(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const triggerBtn = (e && e.currentTarget) || document.getElementById('upgradeToGoogleBtn') || document.getElementById('googleSignInBtn');
+  const originalHtml = triggerBtn ? triggerBtn.innerHTML : '';
+
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+    triggerBtn.innerHTML = `
+      <svg style="animation: spin 1s linear infinite;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+      <span>Connecting...</span>
+    `;
+  }
+
+  try {
+    if (!window.firebaseAuth) {
+      if (window.firebaseAuthError) {
+        throw new Error(`Firebase initialization error: ${window.firebaseAuthError.message}`);
+      }
+      await new Promise((resolve) => {
+        if (window.firebaseAuth) return resolve();
+        const t = setTimeout(resolve, 2000);
+        window.addEventListener('firebase-ready', () => {
+          clearTimeout(t);
+          resolve();
+        }, { once: true });
+      });
+    }
+
+    if (!window.firebaseAuth || !window.firebaseAuth.auth) {
+      throw new Error('Google Authentication service is not ready. Please refresh the page.');
+    }
+
+    const { auth, provider, signInWithPopup } = window.firebaseAuth;
+    const res = await signInWithPopup(auth, provider);
+    const googleUser = res.user;
+
+    const candidateUsername = currentUsername || '';
+    const backendRes = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        googleUid: googleUser.uid,
+        email: googleUser.email,
+        displayName: googleUser.displayName,
+        photoURL: googleUser.photoURL,
+        claimedUsername: candidateUsername
+      })
+    });
+
+    const data = await backendRes.json();
+    if (!backendRes.ok || !data.success) {
+      throw new Error(data.error || 'Server failed to verify Google session.');
+    }
+
+    currentUserData = data.user;
+    currentUsername = data.user.username;
+    localStorage.setItem('drm_username', currentUsername);
+    localStorage.setItem('drm_user_data', JSON.stringify(currentUserData));
+    renderActiveUser();
+    loadUserLinks();
+  } catch (err) {
+    console.error('Google Sign-In Error:', err);
+    if (err.code === 'auth/unauthorized-domain') {
+      alert(`⚠️ Firebase Domain Authorization Required:\n\nDomain "${window.location.hostname}" is not authorized in your Firebase project.\n\nTo allow it:\n1. Go to Firebase Console (https://console.firebase.google.com/project/oneview-drm/authentication/settings)\n2. Click "Authorized domains"\n3. Click "Add domain" and add:\n   ${window.location.hostname}\n\nOnce added, click Verify with Google again!`);
+    } else if (err.code === 'auth/popup-blocked') {
+      alert('The Google sign-in window was blocked by your browser. Please allow popups for this site.');
+    } else if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/configuration-not-found') {
+      alert(`⚠️ Firebase Setting Needed:\nGoogle sign-in provider is not enabled yet in your Firebase Console.\n\nPlease enable Google under:\nFirebase Console > Authentication > Sign-in method > Google.`);
+    } else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
+      alert(`Google Sign-In: ${err.message || err.code || err}`);
+    }
+  } finally {
+    if (triggerBtn) {
+      triggerBtn.disabled = false;
+      triggerBtn.innerHTML = originalHtml;
+    }
+  }
 }
 
 function setupEventListeners() {
@@ -255,46 +332,7 @@ function setupEventListeners() {
   });
 
   const googleSignInBtn = document.getElementById('googleSignInBtn');
-  googleSignInBtn?.addEventListener('click', async () => {
-    try {
-      if (!window.firebaseAuth) {
-        alert('Firebase Auth is initializing. Please wait a moment and click again.');
-        return;
-      }
-      const { auth, provider, signInWithPopup } = window.firebaseAuth;
-      const res = await signInWithPopup(auth, provider);
-      const googleUser = res.user;
-
-      const backendRes = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          googleUid: googleUser.uid,
-          email: googleUser.email,
-          displayName: googleUser.displayName,
-          photoURL: googleUser.photoURL
-        })
-      });
-
-      const data = await backendRes.json();
-      if (!backendRes.ok || !data.success) {
-        alert(data.error || 'Failed to authenticate Google account with server.');
-        return;
-      }
-
-      currentUserData = data.user;
-      currentUsername = data.user.username;
-      localStorage.setItem('drm_username', currentUsername);
-      localStorage.setItem('drm_user_data', JSON.stringify(currentUserData));
-      renderActiveUser();
-      loadUserLinks();
-    } catch (err) {
-      console.error('Google Sign-In Error:', err);
-      if (err.code !== 'auth/popup-closed-by-user') {
-        alert(`Google Sign-In: ${err.message}`);
-      }
-    }
-  });
+  googleSignInBtn?.addEventListener('click', handleGoogleSignIn);
 
   const claimUsernameForm = document.getElementById('claimUsernameForm');
   claimUsernameForm?.addEventListener('submit', async (e) => {

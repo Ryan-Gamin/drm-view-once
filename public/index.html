@@ -20,12 +20,18 @@
       appId: "1:811043960528:web:12634164477bfde6cc50d5"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const provider = new GoogleAuthProvider();
+    try {
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
 
-    window.firebaseAuth = { auth, provider, signInWithPopup, signOut, onAuthStateChanged };
-    window.dispatchEvent(new CustomEvent('firebase-ready'));
+      window.firebaseAuth = { auth, provider, signInWithPopup, signOut, onAuthStateChanged };
+      window.dispatchEvent(new CustomEvent('firebase-ready'));
+    } catch (e) {
+      console.error('Firebase init error:', e);
+      window.firebaseAuthError = e;
+    }
   </script>
 </head>
 <body class="bg-grid">
