@@ -150,6 +150,25 @@ function renderActiveUser() {
 }
 
 function setupEventListeners() {
+  const usernamePlaceholderOverlay = document.getElementById('usernamePlaceholderOverlay');
+  const updateUsernameOverlay = () => {
+    if (!usernamePlaceholderOverlay) return;
+    if (usernameInput.value && usernameInput.value.length > 0) {
+      usernamePlaceholderOverlay.style.display = 'none';
+    } else {
+      usernamePlaceholderOverlay.style.display = 'flex';
+    }
+  };
+  usernameInput?.addEventListener('input', updateUsernameOverlay);
+  usernameInput?.addEventListener('focus', () => {
+    if (usernamePlaceholderOverlay) usernamePlaceholderOverlay.style.opacity = '0.3';
+  });
+  usernameInput?.addEventListener('blur', () => {
+    if (usernamePlaceholderOverlay) usernamePlaceholderOverlay.style.opacity = '1';
+    updateUsernameOverlay();
+  });
+  updateUsernameOverlay();
+
   usernameForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const val = usernameInput.value.trim();
@@ -399,7 +418,7 @@ async function handleUpload() {
   `;
 
   try {
-    const intensity = document.querySelector('input[name="spotlightIntensity"]:checked')?.value || 'small';
+    const intensity = document.querySelector('input[name="spotlightIntensity"]:checked')?.value || 'full';
     const payload = {
       username: currentUsername,
       fileData: selectedFileDataUri,
@@ -572,7 +591,7 @@ window.editLink = (token) => {
   if (editSpotlightIntensityContainer) {
     editSpotlightIntensityContainer.style.display = item.spotlightMode ? 'block' : 'none';
   }
-  const currentIntensity = item.spotlightIntensity || 'small';
+  const currentIntensity = item.spotlightIntensity || 'full';
   const intensityRadio = document.querySelector(`input[name="editSpotlightIntensity"][value="${currentIntensity}"]`);
   if (intensityRadio) intensityRadio.checked = true;
 
@@ -599,7 +618,7 @@ async function handleSaveEdit() {
   saveEditBtn.innerText = 'Saving...';
 
   try {
-    const editIntensity = document.querySelector('input[name="editSpotlightIntensity"]:checked')?.value || 'small';
+    const editIntensity = document.querySelector('input[name="editSpotlightIntensity"]:checked')?.value || 'full';
     const res = await fetch(`/api/images/${token}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

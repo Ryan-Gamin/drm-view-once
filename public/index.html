@@ -50,7 +50,12 @@
         </p>
 
         <form id="usernameForm" style="display: flex; flex-direction: column; gap: 1rem;">
-          <input type="text" id="usernameInput" class="form-input" placeholder="Enter username" required autofocus maxlength="30" style="text-align: center; font-size: 1.1rem; padding: 0.85rem;">
+          <div style="position: relative; width: 100%;">
+            <input type="text" id="usernameInput" class="form-input" placeholder="𝗡𝗲𝘃𝗲𝗿 use your real name" required autofocus maxlength="30" style="text-align: center; font-size: 1.1rem; padding: 0.85rem; width: 100%;">
+            <div id="usernamePlaceholderOverlay" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; color: var(--text-muted); font-size: 1.05rem; transition: opacity 0.2s;">
+              <strong style="font-weight: 800; color: #ffffff; margin-right: 0.35rem;">Never</strong><span>use your real name</span>
+            </div>
+          </div>
           <button type="submit" class="btn btn-primary" style="padding: 0.85rem; font-size: 1rem;">
             <span>Start Sending Images</span>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
@@ -186,7 +191,7 @@
               <label class="form-label" style="font-size: 0.8rem; margin-bottom: 0.5rem; color: var(--accent-cyan);">Choose Hover Intensity:</label>
               <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                 <label style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; cursor: pointer;">
-                  <input type="radio" name="spotlightIntensity" value="small" checked>
+                  <input type="radio" name="spotlightIntensity" value="small">
                   <span>Small area, like a flashlight in the dark</span>
                 </label>
                 <label style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; cursor: pointer;">
@@ -194,7 +199,7 @@
                   <span>Large area, covering most of the image</span>
                 </label>
                 <label style="display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; cursor: pointer;">
-                  <input type="radio" name="spotlightIntensity" value="full">
+                  <input type="radio" name="spotlightIntensity" value="full" checked>
                   <span>Whole image, hover to reveal</span>
                 </label>
               </div>
@@ -356,7 +361,7 @@
           <label class="form-label" style="font-size: 0.75rem; margin-bottom: 0.4rem; color: var(--accent-cyan);">Choose Hover Intensity:</label>
           <div style="display: flex; flex-direction: column; gap: 0.4rem;">
             <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer;">
-              <input type="radio" name="editSpotlightIntensity" value="small" checked>
+              <input type="radio" name="editSpotlightIntensity" value="small">
               <span>Small area, like a flashlight in the dark</span>
             </label>
             <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer;">
@@ -364,7 +369,7 @@
               <span>Large area, covering most of the image</span>
             </label>
             <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer;">
-              <input type="radio" name="editSpotlightIntensity" value="full">
+              <input type="radio" name="editSpotlightIntensity" value="full" checked>
               <span>Whole image, hover to reveal</span>
             </label>
           </div>

@@ -28,6 +28,7 @@
   const screenshotShield = document.getElementById('screenshotShield');
   const unlockBtn = document.getElementById('unlockBtn');
   const burnEarlyBtn = document.getElementById('burnEarlyBtn');
+  const resumeViewingBtn = document.getElementById('resumeViewingBtn');
   const nativeDownloadBtn = document.getElementById('nativeDownloadBtn');
   const timerDisplay = document.getElementById('timerDisplay');
   const timerSubtitle = document.getElementById('timerSubtitle');
@@ -56,6 +57,7 @@
   let isBurned = false;
 
   document.addEventListener('DOMContentLoaded', async () => {
+    setupHoverTracking();
     if (!token || token === 'viewer.html') {
       redirectToGoogle();
       return;
@@ -164,6 +166,9 @@
     stateReady.style.display = 'none';
     stateViewing.style.display = 'block';
 
+    isWindowFocused = true;
+    screenshotShield.classList.remove('active');
+
     headerStatusText.innerText = screenshotsAllowed ? 'Screenshots Enabled' : 'DRM Armed';
     headerDot.style.background = '#00ff88';
 
@@ -193,7 +198,8 @@
       });
     }
 
-    // Setup Anti-Screenshot and security shields
+    // Setup Hover Tracking and Security Shields
+    setupHoverTracking();
     setupSecurityShields();
 
     // Start Timer
@@ -232,7 +238,7 @@
         ctx.fillStyle = '#080a0f';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const intensity = imageMetadata?.spotlightIntensity || 'small';
+        const intensity = imageMetadata?.spotlightIntensity || 'full';
 
         if (isHovering && (intensity === 'full' || mousePos.x >= 0)) {
           if (intensity === 'full') {
@@ -311,20 +317,70 @@
     ctx.restore();
   }
 
+  // --- HOVER TO REVEAL ENGINE ---
+  let hoverListenersConfigured = false;
+  function setupHoverTracking() {
+    if (hoverListenersConfigured) return;
+    hoverListenersConfigured = true;
+
+    const handleMove = (clientX, clientY) => {
+      if (!canvas || !activeImage) return;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const inside = (
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+      );
+
+      if (inside) {
+        isHovering = true;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        mousePos.x = (clientX - rect.left) * scaleX;
+        mousePos.y = (clientY - rect.top) * scaleY;
+      } else {
+        isHovering = false;
+        mousePos = { x: -9999, y: -9999 };
+      }
+    };
+
+    window.addEventListener('pointermove', (e) => handleMove(e.clientX, e.clientY), { passive: true });
+    window.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY), { passive: true });
+
+    window.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches[0]) handleMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches && e.touches[0]) handleMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+
+    window.addEventListener('touchend', () => {
+      isHovering = false;
+      mousePos = { x: -9999, y: -9999 };
+    }, { passive: true });
+
+    document.addEventListener('mouseleave', () => {
+      isHovering = false;
+      mousePos = { x: -9999, y: -9999 };
+    });
+  }
+
   // --- ANTI-SCREENSHOT & DEFENSE SHIELDS ---
   let securityShieldsConfigured = false;
   function setupSecurityShields() {
     if (securityShieldsConfigured) return;
-    // If uploader allowed screenshots, don't arm anti-screenshot defenses
-    if (screenshotsAllowed) {
-      return;
-    }
+    if (screenshotsAllowed) return;
     securityShieldsConfigured = true;
 
-    const handleBlur = () => {
+    const triggerShield = () => {
+      if (screenshotsAllowed || isBurned) return;
       isWindowFocused = false;
       screenshotShield.classList.add('active');
-      headerStatusText.innerText = 'Defocus Shielded';
+      headerStatusText.innerText = 'Shield Active';
       headerDot.style.background = '#ff3366';
       if (ctx && canvas) {
         ctx.fillStyle = '#06080d';
@@ -335,58 +391,61 @@
       } catch (err) {}
     };
 
-    const handleFocus = () => {
+    const dismissShield = () => {
       if (isBurned) return;
       isWindowFocused = true;
       screenshotShield.classList.remove('active');
-      headerStatusText.innerText = screenshotsAllowed ? 'Screenshots Allowed' : 'DRM Armed';
+      headerStatusText.innerText = screenshotsAllowed ? 'Screenshots Enabled' : 'DRM Armed';
       headerDot.style.background = '#00ff88';
     };
 
-    window.addEventListener('blur', handleBlur);
-    window.addEventListener('focus', handleFocus);
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        handleBlur();
-      } else if (document.hasFocus()) {
-        handleFocus();
-      }
-    });
-
-    // Detect cursor leaving window (e.g. moving toward snipping tool or screen capture menu)
-    document.addEventListener('mouseleave', () => {
-      if (!screenshotsAllowed) {
-        handleBlur();
-      }
-    });
-
-    document.addEventListener('mouseenter', () => {
-      if (document.hasFocus()) {
-        handleFocus();
-      }
-    });
-
+    // 1. LITERALLY ANY DETECTED KEY PRESS ACTIVATES SCREENSHOT PROTECTION
     window.addEventListener('keydown', (e) => {
-      const isPrintScreen = e.key === 'PrintScreen' || e.keyCode === 44;
-      const isWinKey = e.key === 'Meta' || e.code === 'MetaLeft' || e.code === 'MetaRight';
-      const isSnippingWin = (e.metaKey || e.ctrlKey || isWinKey) && (e.shiftKey || e.code === 'KeyS' || e.key === 'S' || e.key === 's');
-      const isPrintCmd = (e.metaKey || e.ctrlKey) && (e.key === 'p' || e.key === 'P' || e.code === 'KeyP');
-      const isSaveCmd = (e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S' || e.code === 'KeyS');
-      const isDevTools = e.key === 'F12' || ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c'));
-
-      if (isPrintScreen || isWinKey || isSnippingWin || isPrintCmd || isSaveCmd || isDevTools) {
+      if (!screenshotsAllowed) {
         e.preventDefault();
         e.stopPropagation();
-
-        try {
-          navigator.clipboard?.writeText('DRM PROTECTED: Screenshots are disabled on OneView.');
-        } catch (err) {}
-
-        handleBlur();
+        triggerShield();
         return false;
       }
     }, true);
+
+    window.addEventListener('keyup', (e) => {
+      if (!screenshotsAllowed) {
+        e.preventDefault();
+        e.stopPropagation();
+        triggerShield();
+        return false;
+      }
+    }, true);
+
+    // 2. WHEN PAGE IS FOCUSED (e.g. from background tab, external app, or snipping tool)
+    window.addEventListener('focus', () => {
+      if (!screenshotsAllowed) {
+        triggerShield();
+      }
+    });
+
+    // 3. DEFOCUS / BLUR / TAB SWITCH / PAGE HIDE / MOUSE LEAVE
+    window.addEventListener('blur', triggerShield);
+    window.addEventListener('pagehide', triggerShield);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) triggerShield();
+    });
+    document.addEventListener('mouseleave', () => {
+      if (!screenshotsAllowed) triggerShield();
+    });
+
+    // 4. Click to Resume Viewing
+    resumeViewingBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      dismissShield();
+    });
+    screenshotShield?.addEventListener('click', (e) => {
+      if (e.target === screenshotShield || e.target === resumeViewingBtn) {
+        dismissShield();
+      }
+    });
 
     ['contextmenu', 'dragstart', 'selectstart', 'copy', 'cut'].forEach(evt => {
       window.addEventListener(evt, (e) => {
@@ -394,49 +453,6 @@
         return false;
       }, true);
     });
-
-    const updateCoord = (clientX, clientY) => {
-      const rect = canvas.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      mousePos.x = (clientX - rect.left) * scaleX;
-      mousePos.y = (clientY - rect.top) * scaleY;
-    };
-
-    canvas.addEventListener('mouseenter', (e) => {
-      isHovering = true;
-      updateCoord(e.clientX, e.clientY);
-    });
-
-    canvas.addEventListener('mousemove', (e) => {
-      isHovering = true;
-      updateCoord(e.clientX, e.clientY);
-    });
-
-    canvas.addEventListener('mouseleave', () => {
-      isHovering = false;
-      mousePos = { x: -9999, y: -9999 };
-    });
-
-    canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length > 0) {
-        isHovering = true;
-        updateCoord(e.touches[0].clientX, e.touches[0].clientY);
-      }
-    }, { passive: false });
-
-    canvas.addEventListener('touchend', () => {
-      isHovering = false;
-      mousePos = { x: -9999, y: -9999 };
-    });
-
-    canvas.addEventListener('touchmove', (e) => {
-      if (e.touches.length > 0) {
-        isHovering = true;
-        updateCoord(e.touches[0].clientX, e.touches[0].clientY);
-      }
-    }, { passive: false });
 
     setInterval(() => {
       if (isBurned) return;

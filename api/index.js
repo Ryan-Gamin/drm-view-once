@@ -123,7 +123,7 @@ app.post('/api/upload', async (req, res) => {
       allowScreenshots = false,
       allowDownload = false,
       spotlightMode = false,
-      spotlightIntensity = 'small',
+      spotlightIntensity = 'full',
       watermarkEnabled = false
     } = req.body;
 
@@ -157,7 +157,7 @@ app.post('/api/upload', async (req, res) => {
       allowScreenshots: Boolean(allowScreenshots),
       allowDownload: Boolean(allowDownload),
       spotlightMode: Boolean(spotlightMode),
-      spotlightIntensity: ['small', 'large', 'full'].includes(spotlightIntensity) ? spotlightIntensity : 'small',
+      spotlightIntensity: ['small', 'large', 'full'].includes(spotlightIntensity) ? spotlightIntensity : 'full',
       watermarkEnabled: Boolean(watermarkEnabled),
       isViewed: false,
       viewedAt: null,
@@ -229,7 +229,7 @@ app.get('/api/view/:token/status', async (req, res) => {
     allowScreenshots: Boolean(record.allowScreenshots),
     allowDownload: Boolean(record.allowDownload),
     spotlightMode: Boolean(record.spotlightMode),
-    spotlightIntensity: record.spotlightIntensity || 'small',
+    spotlightIntensity: record.spotlightIntensity || 'full',
     watermarkEnabled: Boolean(record.watermarkEnabled)
   });
 });
@@ -291,7 +291,7 @@ app.post('/api/view/:token/unlock', async (req, res) => {
     allowScreenshots: Boolean(record.allowScreenshots),
     allowDownload: Boolean(record.allowDownload),
     spotlightMode: Boolean(record.spotlightMode),
-    spotlightIntensity: record.spotlightIntensity || 'small',
+    spotlightIntensity: record.spotlightIntensity || 'full',
     watermarkEnabled: Boolean(record.watermarkEnabled),
     viewerIp,
     timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
@@ -347,7 +347,7 @@ app.patch('/api/images/:token', async (req, res) => {
         allowDownload: updated.allowDownload,
         watermarkEnabled: updated.watermarkEnabled,
         spotlightMode: updated.spotlightMode,
-        spotlightIntensity: updated.spotlightIntensity || 'small'
+        spotlightIntensity: updated.spotlightIntensity || 'full'
       }
     });
   } catch (err) {
@@ -377,7 +377,7 @@ app.put('/api/images/:token', async (req, res) => {
         allowDownload: updated.allowDownload,
         watermarkEnabled: updated.watermarkEnabled,
         spotlightMode: updated.spotlightMode,
-        spotlightIntensity: updated.spotlightIntensity || 'small'
+        spotlightIntensity: updated.spotlightIntensity || 'full'
       }
     });
   } catch (err) {
