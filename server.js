@@ -27,7 +27,7 @@ app.get('{*path}', (req, res) => {
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`🔒 DRM View-Once Vault running at: http://localhost:${PORT}`);
+    console.log(`🔒 OneView running at: http://localhost:${PORT}`);
   });
 }
 

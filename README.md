@@ -1,4 +1,4 @@
-# 🔒 DRM View-Once Vault
+# 🔒 OneView
 
 A confidential, view-once image sharing application with **Username-Only Sending**, **Client-Side HTML5 Canvas DRM**, **Anti-Screenshot Defocus Shields**, **Dynamic Forensic Watermarking**, **Instant Server-Side Shredding Upon Unlock**, and **Auto-Redirection to Google After Viewing**.
 
@@ -9,7 +9,7 @@ A confidential, view-once image sharing application with **Username-Only Sending
 ## ⚡ How It Works
 
 1. **Pick a Username & Send**:
-   - No passwords or third-party sign-in required. Enter any chosen username (e.g. `@Ryan`) and select an image to generate an ephemeral encrypted link.
+   - No passwords or third-party sign-in required. Enter any chosen username and select an image to generate an ephemeral encrypted link.
 2. **True Single-View Burn-on-Read**:
    - The encrypted image is permanently shredded from server storage the instant it is unlocked into memory.
 3. **Automatic Google Redirection on Viewed Links**:
